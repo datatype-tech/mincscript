@@ -4,6 +4,8 @@ This directory is the **implementation spec** for MincScript’s Minecraft comma
 
 Bedrock commands also form a **game runtime** (tick.json, scoreboard FSM, tags, `hasitem`, structure reset). See [`bedrock/gameplay/`](bedrock/gameplay/README.md) and the pack [`examples/bedrock-metro-escape/`](../../examples/bedrock-metro-escape/).
 
+The **MincScript language** that will emit these commands is specified in [`docs/language/`](../language/README.md) (design only).
+
 ## Directories
 
 | Path | Edition | Source of truth |
