@@ -132,9 +132,12 @@ impl Parser {
 
     fn parse_unit(&mut self) -> CompilationUnit {
         let mut pack = PathName::new(vec!["_".into()]);
+        let mut pack_span = 0..0;
         if self.peek() == Some(&Token::Pack) {
+            let start = self.peek_span();
             self.pos += 1;
             pack = self.parse_path();
+            pack_span = start.start..self.peek_span().start;
             self.expect(Token::Semicolon, "`;` after pack");
         } else {
             self.error("expected `pack` at start of file");
@@ -156,6 +159,8 @@ impl Parser {
         }
         CompilationUnit {
             pack,
+            pack_span,
+            file: None,
             imports,
             items,
         }
@@ -491,6 +496,7 @@ impl Parser {
                 let mut layout = None;
                 let mut facing = None;
                 let mut bound = None;
+                let mut pack_mode = None;
                 if self.peek() == Some(&Token::AtKw) {
                     self.pos += 1;
                     if self.peek() == Some(&Token::Absolute) {
@@ -511,6 +517,16 @@ impl Parser {
                     self.pos += 1;
                     bound = Some(self.parse_coord_tuple());
                 }
+                if matches!(self.peek(), Some(Token::Ident(s)) if s == "uses") {
+                    self.pos += 1;
+                }
+                if self.peek() == Some(&Token::Pack) {
+                    self.pos += 1;
+                    if self.peek() == Some(&Token::Dot) {
+                        self.pos += 1;
+                    }
+                    pack_mode = Some(self.bump_name());
+                }
                 self.expect(Token::Semicolon, "`;`");
                 WorldClause::ChainPlace {
                     name,
@@ -519,6 +535,7 @@ impl Parser {
                     layout,
                     facing,
                     bound,
+                    pack_mode,
                 }
             }
             Some(Token::Clock) => {
@@ -1025,7 +1042,22 @@ impl Parser {
                 Some(Token::AtKw) => {
                     self.pos += 1;
                     self.expect(Token::LParen, "`(`");
-                    let e = self.parse_expr();
+                    let first = self.parse_expr();
+                    let e = if self.peek() == Some(&Token::Comma) {
+                        self.pos += 1;
+                        let y = self.parse_expr();
+                        self.expect(Token::Comma, "`,`");
+                        let z = self.parse_expr();
+                        Expr::Call {
+                            callee: Box::new(Expr::Field {
+                                base: Box::new(Expr::Ident("BlockPos".into())),
+                                name: "of".into(),
+                            }),
+                            args: vec![first, y, z],
+                        }
+                    } else {
+                        first
+                    };
                     self.expect(Token::RParen, "`)`");
                     prefixes.push(ContextPrefix::At(e));
                 }

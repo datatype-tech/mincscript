@@ -23,6 +23,7 @@ pub fn run(args: Vec<String>) -> i32 {
         "inspect" => cmd_inspect(&mut it),
         "dump" => cmd_dump(&mut it),
         "layout" => cmd_layout(&mut it),
+        "place" => cmd_place(&mut it),
         "-h" | "--help" | "help" => {
             print_usage();
             0
@@ -47,9 +48,10 @@ minc — MincScript compiler
   minc new <dir> --edition bedrock|java --version <ver>
   minc check [dir]
   minc build [--out dist/] [--emit functions-only]
-  minc inspect <file.mincb>
+  minc inspect <file.mincb> [--chain Name] [--strict]
   minc dump <file.mincb|--project> --commands
-  minc layout <chain> --layout stack --origin x y z --facing up
+  minc layout <chain> --layout stack --origin x y z --facing up [--relative]
+  minc place <file.mincb> [--out dist/place]
 "
     );
 }
@@ -91,10 +93,18 @@ fn cmd_new(it: &mut impl Iterator<Item = String>) -> i32 {
 }
 
 fn cmd_check(it: &mut impl Iterator<Item = String>) -> i32 {
-    let dir = it
-        .next()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let mut strict_raw = false;
+    let mut dir = PathBuf::from(".");
+    for a in it {
+        match a.as_str() {
+            "--strict-raw" => strict_raw = true,
+            s if !s.starts_with('-') => dir = PathBuf::from(a),
+            other => {
+                eprintln!("unknown flag `{other}`");
+                return 2;
+            }
+        }
+    }
     if dir.is_file() && dir.extension().and_then(|s| s.to_str()) == Some("mcs") {
         return cmd_parse_file(&dir);
     }
@@ -110,20 +120,23 @@ fn cmd_check(it: &mut impl Iterator<Item = String>) -> i32 {
         }
     };
     match load_and_merge(&root) {
-        Ok((config, unit)) => match compile_unit(&unit, &config) {
-            Ok(_) => {
-                println!(
-                    "ok pack={} edition={}",
-                    config.pack,
-                    config.edition.as_str()
-                );
-                0
+        Ok((mut config, unit)) => {
+            config.strict_raw = strict_raw;
+            match compile_unit(&unit, &config) {
+                Ok(_) => {
+                    println!(
+                        "ok pack={} edition={}",
+                        config.pack,
+                        config.edition.as_str()
+                    );
+                    0
+                }
+                Err(diags) => {
+                    print_project_errors(&root, &diags);
+                    1
+                }
             }
-            Err(diags) => {
-                print_project_errors(&root, &diags);
-                1
-            }
-        },
+        }
         Err(diags) => {
             print_project_errors(&root, &diags);
             1
@@ -174,6 +187,9 @@ fn cmd_build(it: &mut impl Iterator<Item = String>) -> i32 {
             }
             match compile_unit(&unit, &config) {
                 Ok(art) => {
+                    for w in &art.warnings {
+                        eprintln!("warning: {w}");
+                    }
                     let out_dir = if out.is_absolute() {
                         out
                     } else {
@@ -200,8 +216,30 @@ fn cmd_build(it: &mut impl Iterator<Item = String>) -> i32 {
 }
 
 fn cmd_inspect(it: &mut impl Iterator<Item = String>) -> i32 {
-    let Some(path) = it.next() else {
-        eprintln!("minc inspect <file.mincb>");
+    let args: Vec<String> = it.collect();
+    let mut path = None;
+    let mut chain = None;
+    let mut strict = false;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--chain" => {
+                i += 1;
+                if i < args.len() {
+                    chain = Some(args[i].clone());
+                }
+            }
+            "--strict" => strict = true,
+            s if !s.starts_with('-') => path = Some(args[i].clone()),
+            other => {
+                eprintln!("unknown flag `{other}`");
+                return 2;
+            }
+        }
+        i += 1;
+    }
+    let Some(path) = path else {
+        eprintln!("minc inspect <file.mincb> [--chain Name] [--strict]");
         return 2;
     };
     let bytes = match fs::read(&path) {
@@ -212,19 +250,32 @@ fn cmd_inspect(it: &mut impl Iterator<Item = String>) -> i32 {
         }
     };
     if let Some(h) = decode_header(&bytes) {
-        if let Ok(toml) = fs::read_to_string("minc.toml") {
-            if let Ok(cfg) = parse_minc_toml(&toml) {
-                let want = cfg.edition.byte();
-                if h.edition != want {
-                    eprintln!(
-                        "MINCB edition {} does not match minc.toml {}",
-                        h.edition,
-                        cfg.edition.as_str()
-                    );
-                    return 3;
+        let toml_path = PathBuf::from("minc.toml");
+        if toml_path.is_file() {
+            if let Ok(toml) = fs::read_to_string(&toml_path) {
+                if let Ok(cfg) = parse_minc_toml(&toml) {
+                    let want = cfg.edition.byte();
+                    if h.edition != want {
+                        eprintln!(
+                            "MINCB edition {} does not match minc.toml {}",
+                            h.edition,
+                            cfg.edition.as_str()
+                        );
+                        if strict {
+                            return 3;
+                        }
+                    }
                 }
             }
         }
+    }
+    if let Some(name) = chain {
+        let Some(image) = mincb::decode_image(&bytes) else {
+            eprintln!("not a MINCB file");
+            return 1;
+        };
+        print!("{}", mincb::inspect_chain_text(&image, &name));
+        return 0;
     }
     print!("{}", mincb::inspect_text(&bytes, None, &[]));
     0
@@ -247,7 +298,19 @@ fn cmd_dump(it: &mut impl Iterator<Item = String>) -> i32 {
     }
     if let Some(p) = path {
         if p.extension().and_then(|s| s.to_str()) == Some("mincb") {
-            eprintln!("binary dump of command strings requires a project; compiling cwd");
+            let bytes = match fs::read(&p) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return 2;
+                }
+            };
+            let Some(image) = mincb::decode_image(&bytes) else {
+                eprintln!("not a MINCB file");
+                return 1;
+            };
+            print!("{}", mincb::dump_commands_from_image(&image));
+            return 0;
         }
     }
     let root = match find_root(&PathBuf::from(".")) {
@@ -283,6 +346,7 @@ fn cmd_layout(it: &mut impl Iterator<Item = String>) -> i32 {
     let mut layout = "stack".to_string();
     let mut origin = [0, 64, 0];
     let mut facing = "up".to_string();
+    let mut relative = false;
     let args: Vec<String> = it.collect();
     let mut i = 0;
     while i < args.len() {
@@ -305,7 +369,7 @@ fn cmd_layout(it: &mut impl Iterator<Item = String>) -> i32 {
                     args.get(i).and_then(|s| s.parse().ok()).unwrap_or(0)
                 });
             }
-            "--relative" => {}
+            "--relative" => relative = true,
             _ => {}
         }
         i += 1;
@@ -317,6 +381,17 @@ fn cmd_layout(it: &mut impl Iterator<Item = String>) -> i32 {
             return 2;
         }
     };
+    if !relative {
+        if let Ok(toml) = fs::read_to_string(root.join("minc.toml")) {
+            if let Ok(cfg) = parse_minc_toml(&toml) {
+                origin = [
+                    origin[0] - cfg.origin[0],
+                    origin[1] - cfg.origin[1],
+                    origin[2] - cfg.origin[2],
+                ];
+            }
+        }
+    }
     let controller = root.join("src/controller.mcs");
     let src = match fs::read_to_string(&controller) {
         Ok(s) => s,
@@ -332,6 +407,73 @@ fn cmd_layout(it: &mut impl Iterator<Item = String>) -> i32 {
     }
     println!("updated {}", controller.display());
     0
+}
+
+fn cmd_place(it: &mut impl Iterator<Item = String>) -> i32 {
+    let mut path = None;
+    let mut out = PathBuf::from("dist/place");
+    let args: Vec<String> = it.collect();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--out" => {
+                i += 1;
+                if i < args.len() {
+                    out = PathBuf::from(&args[i]);
+                }
+            }
+            s if !s.starts_with('-') => path = Some(PathBuf::from(&args[i])),
+            other => {
+                eprintln!("unknown flag `{other}`");
+                return 2;
+            }
+        }
+        i += 1;
+    }
+    let bytes = if let Some(p) = path {
+        match fs::read(&p) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("{e}");
+                return 2;
+            }
+        }
+    } else {
+        let root = match find_root(&PathBuf::from(".")) {
+            Some(r) => r,
+            None => {
+                eprintln!("missing minc.toml");
+                return 2;
+            }
+        };
+        match load_and_merge(&root) {
+            Ok((config, unit)) => match compile_unit(&unit, &config) {
+                Ok(art) => art.mincb,
+                Err(diags) => {
+                    print_project_errors(&root, &diags);
+                    return 1;
+                }
+            },
+            Err(diags) => {
+                print_project_errors(&root, &diags);
+                return 1;
+            }
+        }
+    };
+    let Some(image) = mincb::decode_image(&bytes) else {
+        eprintln!("not a MINCB file");
+        return 1;
+    };
+    match crate::place::write_install_tree(&out, &image) {
+        Ok(_) => {
+            println!("placed installer into {}", out.display());
+            0
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            2
+        }
+    }
 }
 
 fn cmd_parse_file(path: &Path) -> i32 {

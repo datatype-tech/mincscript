@@ -24,6 +24,7 @@ struct MethodInfo {
     arity: usize,
     #[allow(dead_code)]
     is_static: bool,
+    annotations: Vec<String>,
 }
 
 /// Type-check a compilation unit (single file or merged project).
@@ -56,6 +57,7 @@ pub fn check_with_config(unit: &CompilationUnit, config: Option<&MincConfig>) ->
                             return_ty: m.return_ty.clone(),
                             arity: m.params.len(),
                             is_static: m.is_static,
+                            annotations: m.annotations.iter().map(|a| a.name.clone()).collect(),
                         }),
                     }
                 }
@@ -66,15 +68,56 @@ pub fn check_with_config(unit: &CompilationUnit, config: Option<&MincConfig>) ->
     }
 
     let mut errors = Vec::new();
+    for (i, a) in methods.iter().enumerate() {
+        for b in methods.iter().skip(i + 1) {
+            if a.class == b.class && a.name == b.name && a.arity == b.arity {
+                errors.push(Diagnostic::new(
+                    0..0,
+                    format!(
+                        "duplicate method `{}.{}` with arity {}",
+                        a.class, a.name, a.arity
+                    ),
+                ));
+            }
+        }
+    }
     if let Some(cfg) = config {
         let pack = unit.pack.dotted();
         if pack != cfg.pack && !pack.starts_with(&format!("{}.", cfg.pack)) {
             errors.push(Diagnostic::new(
-                0..0,
+                unit.pack_span.clone(),
                 format!(
                     "pack `{pack}` must equal `{0}` or a subpackage of it",
                     cfg.pack
                 ),
+            ));
+        }
+        if unit
+            .items
+            .iter()
+            .filter(|i| matches!(i, Item::World(_)))
+            .count()
+            > 1
+        {
+            errors.push(Diagnostic::new(
+                0..0,
+                "project must contain exactly one world controller",
+            ));
+        }
+        let ticking = unit.items.iter().filter_map(|i| match i {
+            Item::World(w) => Some(
+                w.clauses
+                    .iter()
+                    .filter(|c| matches!(c, crate::ast::WorldClause::TickingArea { .. }))
+                    .count(),
+            ),
+            _ => None,
+        });
+        let ticking_n: usize = ticking.sum();
+        if cfg.edition == Edition::Bedrock && ticking_n > 10 {
+            errors.push(Diagnostic::new(
+                0..0,
+                "Bedrock ticking areas would exceed 10",
             ));
         }
     }
@@ -90,6 +133,9 @@ pub fn check_with_config(unit: &CompilationUnit, config: Option<&MincConfig>) ->
                                 .iter()
                                 .map(|p| (p.name.clone(), p.ty.clone()))
                                 .collect();
+                            let java_only = method.annotations.iter().any(|a| a.name == "JavaOnly");
+                            let bedrock_only =
+                                method.annotations.iter().any(|a| a.name == "BedrockOnly");
                             check_stmts(
                                 &class.name,
                                 &method.body,
@@ -100,6 +146,8 @@ pub fn check_with_config(unit: &CompilationUnit, config: Option<&MincConfig>) ->
                                 &mut locals,
                                 &mut errors,
                                 config,
+                                java_only,
+                                bedrock_only,
                             );
                         }
                         Member::Field(f) => {
@@ -115,6 +163,8 @@ pub fn check_with_config(unit: &CompilationUnit, config: Option<&MincConfig>) ->
                                     &locals,
                                     &mut errors,
                                     config,
+                                    false,
+                                    false,
                                 );
                             }
                         }
@@ -133,9 +183,18 @@ pub fn check_with_config(unit: &CompilationUnit, config: Option<&MincConfig>) ->
                     &mut locals,
                     &mut errors,
                     config,
+                    false,
+                    false,
                 );
             }
             _ => {}
+        }
+    }
+    if let Some(file) = &unit.file {
+        for e in &mut errors {
+            if e.file.is_none() {
+                e.file = Some(file.clone());
+            }
         }
     }
     errors
@@ -152,6 +211,8 @@ fn check_stmts(
     locals: &mut Vec<(String, TypeRef)>,
     errors: &mut Vec<Diagnostic>,
     config: Option<&MincConfig>,
+    java_only: bool,
+    bedrock_only: bool,
 ) {
     for stmt in stmts {
         match stmt {
@@ -166,6 +227,8 @@ fn check_stmts(
                     locals,
                     errors,
                     config,
+                    java_only,
+                    bedrock_only,
                 );
             }
             Stmt::Local { ty, name, init } => {
@@ -180,6 +243,8 @@ fn check_stmts(
                         locals,
                         errors,
                         config,
+                        java_only,
+                        bedrock_only,
                     );
                 }
                 locals.push((name.clone(), ty.clone()));
@@ -200,6 +265,8 @@ fn check_stmts(
                     locals,
                     errors,
                     config,
+                    java_only,
+                    bedrock_only,
                 );
                 locals.push((name.clone(), ty.clone()));
                 check_stmts(
@@ -212,6 +279,8 @@ fn check_stmts(
                     locals,
                     errors,
                     config,
+                    java_only,
+                    bedrock_only,
                 );
                 locals.pop();
             }
@@ -230,6 +299,8 @@ fn check_stmts(
                     locals,
                     errors,
                     config,
+                    java_only,
+                    bedrock_only,
                 );
                 check_stmts(
                     current_class,
@@ -241,6 +312,8 @@ fn check_stmts(
                     locals,
                     errors,
                     config,
+                    java_only,
+                    bedrock_only,
                 );
                 if let Some(else_body) = else_body {
                     check_stmts(
@@ -253,6 +326,8 @@ fn check_stmts(
                         locals,
                         errors,
                         config,
+                        java_only,
+                        bedrock_only,
                     );
                 }
             }
@@ -272,6 +347,8 @@ fn check_stmts(
                                 locals,
                                 errors,
                                 config,
+                                java_only,
+                                bedrock_only,
                             );
                         }
                         _ => {}
@@ -287,6 +364,8 @@ fn check_stmts(
                     locals,
                     errors,
                     config,
+                    java_only,
+                    bedrock_only,
                 );
             }
             Stmt::Switch {
@@ -304,6 +383,8 @@ fn check_stmts(
                     locals,
                     errors,
                     config,
+                    java_only,
+                    bedrock_only,
                 );
                 for (_, body) in arms {
                     check_stmts(
@@ -316,6 +397,8 @@ fn check_stmts(
                         locals,
                         errors,
                         config,
+                        java_only,
+                        bedrock_only,
                     );
                 }
                 if let Some(body) = default {
@@ -329,6 +412,8 @@ fn check_stmts(
                         locals,
                         errors,
                         config,
+                        java_only,
+                        bedrock_only,
                     );
                 }
             }
@@ -343,6 +428,8 @@ fn check_stmts(
                     locals,
                     errors,
                     config,
+                    java_only,
+                    bedrock_only,
                 );
             }
             Stmt::Assign { target, value, .. } => {
@@ -356,6 +443,8 @@ fn check_stmts(
                     locals,
                     errors,
                     config,
+                    java_only,
+                    bedrock_only,
                 );
                 check_expr(
                     current_class,
@@ -367,6 +456,8 @@ fn check_stmts(
                     locals,
                     errors,
                     config,
+                    java_only,
+                    bedrock_only,
                 );
                 if let Expr::Field { base, name } = target {
                     if let Some(owner) =
@@ -392,6 +483,8 @@ fn check_expr(
     locals: &[(String, TypeRef)],
     errors: &mut Vec<Diagnostic>,
     config: Option<&MincConfig>,
+    java_only: bool,
+    bedrock_only: bool,
 ) {
     match expr {
         Expr::Unary { expr, .. } => check_expr(
@@ -404,8 +497,10 @@ fn check_expr(
             locals,
             errors,
             config,
+            java_only,
+            bedrock_only,
         ),
-        Expr::Binary { lhs, rhs, .. } => {
+        Expr::Binary { op, lhs, rhs, .. } => {
             check_expr(
                 current_class,
                 lhs,
@@ -416,6 +511,8 @@ fn check_expr(
                 locals,
                 errors,
                 config,
+                java_only,
+                bedrock_only,
             );
             check_expr(
                 current_class,
@@ -427,7 +524,19 @@ fn check_expr(
                 locals,
                 errors,
                 config,
+                java_only,
+                bedrock_only,
             );
+            if *op == crate::ast::BinOp::Add
+                && (matches!(lhs.as_ref(), Expr::String(_))
+                    || matches!(rhs.as_ref(), Expr::String(_)))
+                && !(is_string_const(lhs) && is_string_const(rhs))
+            {
+                errors.push(Diagnostic::new(
+                    0..0,
+                    "String concatenation is compile-time only",
+                ));
+            }
         }
         Expr::Call { callee, args } => {
             check_expr(
@@ -440,6 +549,8 @@ fn check_expr(
                 locals,
                 errors,
                 config,
+                java_only,
+                bedrock_only,
             );
             for arg in args {
                 check_expr(
@@ -452,6 +563,8 @@ fn check_expr(
                     locals,
                     errors,
                     config,
+                    java_only,
+                    bedrock_only,
                 );
             }
             if let Expr::Ident(name) = callee.as_ref() {
@@ -465,15 +578,77 @@ fn check_expr(
                         }
                     }
                 }
+                if name == "cmd" && config.map(|c| c.strict_raw).unwrap_or(false) {
+                    errors.push(Diagnostic::new(
+                        0..0,
+                        "`cmd` is forbidden under --strict-raw",
+                    ));
+                }
             }
             if let Expr::Field { base, name } = callee.as_ref() {
-                if let Some(owner) =
-                    type_of(current_class, base, fields, methods, classes, enums, locals)
-                {
-                    deny_private_method(current_class, &owner, name, methods, errors);
+                if name == "data" {
+                    if let Some(cfg) = config {
+                        if cfg.edition == Edition::Java {
+                            errors.push(Diagnostic::new(
+                                0..0,
+                                "`.data(...)` is Bedrock aux-value syntax; invalid on Java",
+                            ));
+                        }
+                    }
                 }
-                if let Expr::Ident(class) = base.as_ref() {
-                    deny_private_method(current_class, class, name, methods, errors);
+                let owner = if let Expr::Ident(class) = base.as_ref() {
+                    Some(class.clone())
+                } else {
+                    type_of(current_class, base, fields, methods, classes, enums, locals)
+                };
+                if let Some(owner) = owner {
+                    deny_private_method(current_class, &owner, name, methods, errors);
+                    if let Some(m) = methods.iter().find(|m| m.class == owner && m.name == *name) {
+                        if m.annotations.iter().any(|a| a == "JavaOnly") {
+                            if !java_only {
+                                errors.push(Diagnostic::new(
+                                    0..0,
+                                    format!(
+                                        "`{}.{name}` is @JavaOnly and must not be called from shared code",
+                                        m.class
+                                    ),
+                                ));
+                            }
+                            if let Some(cfg) = config {
+                                if cfg.edition == Edition::Bedrock {
+                                    errors.push(Diagnostic::new(
+                                        0..0,
+                                        format!(
+                                            "`{}.{name}` is @JavaOnly (target edition is bedrock)",
+                                            m.class
+                                        ),
+                                    ));
+                                }
+                            }
+                        }
+                        if m.annotations.iter().any(|a| a == "BedrockOnly") {
+                            if !bedrock_only {
+                                errors.push(Diagnostic::new(
+                                    0..0,
+                                    format!(
+                                        "`{}.{name}` is @BedrockOnly and must not be called from shared code",
+                                        m.class
+                                    ),
+                                ));
+                            }
+                            if let Some(cfg) = config {
+                                if cfg.edition == Edition::Java {
+                                    errors.push(Diagnostic::new(
+                                        0..0,
+                                        format!(
+                                            "`{}.{name}` is @BedrockOnly (target edition is java)",
+                                            m.class
+                                        ),
+                                    ));
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -488,6 +663,8 @@ fn check_expr(
                 locals,
                 errors,
                 config,
+                java_only,
+                bedrock_only,
             );
             if let Some(owner) =
                 type_of(current_class, base, fields, methods, classes, enums, locals)
@@ -507,6 +684,8 @@ fn check_expr(
                     locals,
                     errors,
                     config,
+                    java_only,
+                    bedrock_only,
                 );
             }
         }
@@ -632,6 +811,18 @@ fn builtin_return(owner: &str, name: &str) -> Option<String> {
         }
         .to_string(),
     )
+}
+
+fn is_string_const(expr: &Expr) -> bool {
+    match expr {
+        Expr::String(_) => true,
+        Expr::Binary {
+            op: crate::ast::BinOp::Add,
+            lhs,
+            rhs,
+        } => is_string_const(lhs) && is_string_const(rhs),
+        _ => false,
+    }
 }
 
 fn named_type(ty: &TypeRef) -> Option<String> {

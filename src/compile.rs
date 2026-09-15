@@ -7,9 +7,11 @@ use crate::ast::{CompilationUnit, Item};
 use crate::config::MincConfig;
 use crate::diagnostic::Diagnostic;
 use crate::extract::{extract_binary_info_with_revision, BinaryInfo};
+use crate::isa;
 use crate::layout::{place_commands, CbInstance};
 use crate::lower::{self, Lowered};
-use crate::mincb::{self, CblkRec, FuncRec};
+use crate::mincb::{self, CblkRec, FuncRec, SymbRec};
+use crate::place;
 use crate::sema;
 
 #[derive(Debug, Clone)]
@@ -30,6 +32,8 @@ pub struct Artifacts {
     pub command_blocks: Vec<CbInstance>,
     pub inspect: String,
     pub pack_files: BTreeMap<PathBuf, String>,
+    pub warnings: Vec<String>,
+    pub image: mincb::MincbImage,
 }
 
 pub fn merge_units(files: &[ParsedFile]) -> Result<CompilationUnit, Vec<Diagnostic>> {
@@ -99,6 +103,8 @@ pub fn merge_units(files: &[ParsedFile]) -> Result<CompilationUnit, Vec<Diagnost
     }
     Ok(CompilationUnit {
         pack: files[0].unit.pack.clone(),
+        pack_span: files[0].unit.pack_span.clone(),
+        file: files[0].unit.file.clone(),
         imports,
         items,
     })
@@ -114,7 +120,12 @@ pub fn compile_unit(
     }
     let info = extract_binary_info_with_revision(unit, config.score_revision);
     let lowered = lower::lower_project(unit, config, &info)?;
+    let mut warnings = Vec::new();
     let mut command_blocks = Vec::new();
+    let mut chain_lengths: Vec<(String, u16)> = Vec::new();
+    let host = info.host_tick.as_deref().unwrap_or("functions");
+    let functions_host = host.contains("function") || host == "both" || host.is_empty();
+
     for chain in &lowered.chains {
         let (origin, facing, layout) = lower::resolve_chain_origin(&info, config, &chain.name);
         let clock = info
@@ -130,19 +141,54 @@ pub fn compile_unit(
             .find(|c| c.name == chain.name)
             .and_then(|c| c.bound)
             .map(|b| [b[0] as i32, b[1] as i32, b[2] as i32]);
+        let pack_mode = info
+            .chains
+            .iter()
+            .find(|c| c.name == chain.name)
+            .and_then(|c| c.pack_mode.clone())
+            .unwrap_or_else(|| config.chain_pack.clone());
+        let cmds_for_cb: Vec<(String, crate::layout::ChainCmdMeta)> = if pack_mode == "function" {
+            let path = chain_fn_path(config, &chain.name);
+            let meta = chain
+                .commands
+                .first()
+                .map(|(_, m)| {
+                    let mut m = m.clone();
+                    m.repeat = clock;
+                    m
+                })
+                .unwrap_or_default();
+            vec![(format!("function {path}"), meta)]
+        } else {
+            chain.commands.clone()
+        };
         let placed = place_commands(
             origin,
             &layout,
             facing,
             config.max_span,
             bound,
-            &chain.commands,
+            &cmds_for_cb,
             clock,
         )
         .map_err(|e| vec![Diagnostic::new(0..0, e)])?;
         if placed.len() > 100 {
-            // warning-as-note: still emit
+            warnings.push(format!(
+                "chain `{}` length {} > 100 (hard to see in Creative)",
+                chain.name,
+                placed.len()
+            ));
         }
+        if chain.commands.len() as u32 > config.function_command_limit {
+            return Err(vec![Diagnostic::new(
+                0..0,
+                format!(
+                    "chain `{}` exceeds limits.function_command_limit",
+                    chain.name
+                ),
+            )]);
+        }
+        chain_lengths.push((chain.name.clone(), placed.len() as u16));
         command_blocks.extend(placed);
     }
 
@@ -151,22 +197,7 @@ pub fn compile_unit(
         functions.insert(f.path.clone(), join_cmds(&f.commands));
     }
     for chain in &lowered.chains {
-        let path = match config.edition {
-            crate::config::Edition::Bedrock => {
-                format!(
-                    "{}/chain/{}",
-                    config.bedrock_fn_prefix(),
-                    chain.name.to_lowercase()
-                )
-            }
-            crate::config::Edition::Java => {
-                format!(
-                    "{}:chain/{}",
-                    config.java_namespace(),
-                    chain.name.to_lowercase()
-                )
-            }
-        };
+        let path = chain_fn_path(config, &chain.name);
         let body = chain
             .commands
             .iter()
@@ -176,84 +207,88 @@ pub fn compile_unit(
         functions.insert(path, body);
     }
 
-    let tick_json = if config.emit_functions {
-        let mut values: Vec<String> = lowered.tick_paths.clone();
-        if info
-            .host_tick
-            .as_deref()
-            .unwrap_or("functions")
-            .starts_with("function")
-            || info.host_tick.as_deref() == Some("both")
-            || info.host_tick.is_none()
-        {
-            if let Some(clock) = info.clock.as_ref().or(config.clock.as_ref()) {
-                let p = match config.edition {
-                    crate::config::Edition::Bedrock => {
-                        format!(
-                            "{}/chain/{}",
-                            config.bedrock_fn_prefix(),
-                            clock.to_lowercase()
-                        )
-                    }
-                    crate::config::Edition::Java => {
-                        format!(
-                            "{}:chain/{}",
-                            config.java_namespace(),
-                            chain_name_java(config, clock)
-                        )
-                    }
-                };
-                if !values.contains(&p) {
-                    values.push(p);
-                }
-            }
-        }
-        if values.is_empty() {
-            None
-        } else {
-            Some(tick_json_body(config, &values))
-        }
-    } else {
-        None
-    };
-
-    let load_json = if lowered.load_paths.is_empty() {
+    let mut tick_json = None;
+    let mut load_json = if lowered.load_paths.is_empty() {
         None
     } else {
         Some(tick_json_body(config, &lowered.load_paths))
     };
 
-    let mut image = mincb::image_from_extract(&info, config.edition, &config.game_version);
-    image.origin = config.origin;
-    if let Some(o) = info.origin {
-        if info.origin.is_some() {
-            image.origin = [config.origin[0], config.origin[1], config.origin[2]];
-            let _ = o;
+    if config.emit_functions {
+        match config.edition {
+            crate::config::Edition::Bedrock => {
+                let boot = format!("{}/_boot/tick", config.bedrock_fn_prefix());
+                let onload_path = format!("{}/_boot/onload", config.bedrock_fn_prefix());
+                let mut onload = lowered.setup.clone();
+                for p in &lowered.load_paths {
+                    onload.push(format!("function {p}"));
+                }
+                functions.insert(onload_path.clone(), join_cmds(&onload));
+                let mut tick_body = vec![format!(
+                    "execute unless score {} mi matches 1.. run function {onload_path}",
+                    config.edition.world_holder()
+                )];
+                tick_body.push(format!(
+                    "scoreboard players set {} mi 1",
+                    config.edition.world_holder()
+                ));
+                for p in &lowered.tick_paths {
+                    tick_body.push(format!("function {p}"));
+                }
+                if functions_host {
+                    if let Some(clock) = info.clock.as_ref().or(config.clock.as_ref()) {
+                        let p = chain_fn_path(config, clock);
+                        tick_body.push(format!("function {p}"));
+                    }
+                }
+                functions.insert(boot.clone(), join_cmds(&tick_body));
+                tick_json = Some(tick_json_body(config, &[boot]));
+                load_json = Some(tick_json_body(
+                    config,
+                    &[format!("{}/_boot/onload", config.bedrock_fn_prefix())],
+                ));
+            }
+            crate::config::Edition::Java => {
+                let mut values = lowered.tick_paths.clone();
+                if functions_host {
+                    if let Some(clock) = info.clock.as_ref().or(config.clock.as_ref()) {
+                        let p = chain_fn_path(config, clock);
+                        if !values.contains(&p) {
+                            values.push(p);
+                        }
+                    }
+                }
+                if !values.is_empty() {
+                    tick_json = Some(tick_json_body(config, &values));
+                }
+            }
         }
     }
+
+    let mut image = mincb::image_from_extract(&info, config.edition, &config.game_version);
     if let Some(world) = info.origin {
         image.origin = [world[0] as i32, world[1] as i32, world[2] as i32];
+    } else {
+        image.origin = config.origin;
     }
-    image.functions = lowered
-        .functions
+    intern_fn_symbols(&mut image, &functions);
+    let func_recs: Vec<FuncRec> = functions
         .iter()
-        .map(|f| {
+        .map(|(path, body)| {
             let symb = image
                 .symbols
                 .iter()
-                .find(|s| {
-                    s.qualified
-                        .ends_with(&format!(".{}", f.path.rsplit('/').next().unwrap_or("")))
-                })
+                .find(|s| s.qualified.ends_with(path) || s.short == *path)
                 .map(|s| s.id)
                 .unwrap_or(0);
             FuncRec {
                 symb,
-                path: f.path.clone(),
-                body: join_cmds(&f.commands),
+                path: path.clone(),
+                body: body.clone(),
             }
         })
         .collect();
+    image.functions = func_recs;
     image.command_blocks = command_blocks
         .iter()
         .map(|b| CblkRec {
@@ -267,20 +302,71 @@ pub fn compile_unit(
             command: b.command.clone(),
         })
         .collect();
-    for chain in image.chains.iter_mut() {
-        chain.length = command_blocks.len() as u16;
-    }
-    if let Some(c0) = info.chains.first() {
-        let n = lowered
+    let mut cursor = 0u16;
+    for (name, len) in &chain_lengths {
+        let want = image
+            .symbols
+            .iter()
+            .find(|s| s.qualified.ends_with(&format!(".chain.{name}")) || s.short == *name)
+            .map(|s| s.id);
+        let pack_mode = info
             .chains
             .iter()
-            .find(|c| c.name == c0.name)
-            .map(|c| c.commands.len() as u16)
-            .unwrap_or(0);
-        if let Some(ch) = image.chains.first_mut() {
-            ch.length = n;
+            .find(|c| c.name == *name)
+            .and_then(|c| c.pack_mode.as_deref())
+            .unwrap_or(config.chain_pack.as_str());
+        if let Some(id) = want {
+            if let Some(ch) = image.chains.iter_mut().find(|c| c.name_symb == id) {
+                ch.length = *len;
+                ch.pack_mode = u8::from(pack_mode == "function");
+            }
+        }
+        cursor = cursor.saturating_add(*len);
+    }
+    let _ = cursor;
+
+    let install = place::install_functions(&image);
+    for (path, body) in &install {
+        functions.insert(path.clone(), body.clone());
+    }
+    intern_fn_symbols(&mut image, &functions);
+    let func_recs: Vec<FuncRec> = functions
+        .iter()
+        .map(|(path, body)| FuncRec {
+            symb: image
+                .symbols
+                .iter()
+                .find(|s| s.qualified.ends_with(path) || s.short == *path)
+                .map(|s| s.id)
+                .unwrap_or(0),
+            path: path.clone(),
+            body: body.clone(),
+        })
+        .collect();
+    image.functions = func_recs;
+
+    let mut isa_errors = Vec::new();
+    for body in functions.values() {
+        for line in body.lines() {
+            if let Err(e) = isa::check_command(config.edition, line) {
+                isa_errors.push(e);
+            }
         }
     }
+    for b in &command_blocks {
+        if let Err(e) = isa::check_command(config.edition, &b.command) {
+            isa_errors.push(e);
+        }
+    }
+    isa_errors.sort();
+    isa_errors.dedup();
+    if !isa_errors.is_empty() {
+        return Err(isa_errors
+            .into_iter()
+            .map(|e| Diagnostic::new(0..0, e))
+            .collect());
+    }
+
     let mincb_bytes = mincb::encode_image(&image);
     let inspect = mincb::inspect_text(&mincb_bytes, Some(&info), &command_blocks);
     let pack_files = emit_pack_files(
@@ -300,12 +386,44 @@ pub fn compile_unit(
         command_blocks,
         inspect,
         pack_files,
+        warnings,
+        image,
     })
 }
 
-fn chain_name_java(config: &MincConfig, clock: &str) -> String {
-    let _ = config;
-    clock.to_lowercase()
+fn chain_fn_path(config: &MincConfig, name: &str) -> String {
+    match config.edition {
+        crate::config::Edition::Bedrock => {
+            format!(
+                "{}/chain/{}",
+                config.bedrock_fn_prefix(),
+                name.to_lowercase()
+            )
+        }
+        crate::config::Edition::Java => {
+            format!("{}:chain/{}", config.java_namespace(), name.to_lowercase())
+        }
+    }
+}
+
+fn intern_fn_symbols(image: &mut mincb::MincbImage, functions: &BTreeMap<String, String>) {
+    let mut next = image.symbols.iter().map(|s| s.id).max().unwrap_or(0);
+    for path in functions.keys() {
+        if image
+            .symbols
+            .iter()
+            .any(|s| s.qualified.ends_with(path) || s.short == *path)
+        {
+            continue;
+        }
+        next += 1;
+        image.symbols.push(SymbRec {
+            id: next,
+            kind: 3,
+            short: path.clone(),
+            qualified: format!("{}.{}", image.pack, path),
+        });
+    }
 }
 
 fn join_cmds(cmds: &[String]) -> String {

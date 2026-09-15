@@ -6,11 +6,13 @@ pub mod compile;
 pub mod config;
 pub mod diagnostic;
 pub mod extract;
+pub mod isa;
 pub mod layout;
 pub mod lexer;
 pub mod lower;
 pub mod mincb;
 pub mod parser;
+pub mod place;
 pub mod project;
 pub mod sema;
 pub mod span;
@@ -221,6 +223,188 @@ public class Match {
         assert!(
             dump.contains("if entity @s[tag="),
             "early-return tag gates:\n{dump}"
+        );
+        let image = mincb::decode_image(&art.mincb).expect("decode");
+        assert!(!image.command_blocks.is_empty());
+        assert!(art.functions.keys().any(|p| p.contains("install")));
+        let dump_bin = mincb::dump_commands_from_image(&image);
+        assert!(
+            dump_bin.contains("# chain") || dump_bin.contains("# function"),
+            "{dump_bin}"
+        );
+    }
+
+    #[test]
+    fn or_lowers_to_two_execute_lines() {
+        let src = r#"
+pack demo;
+public class M {
+    public static int a;
+    public static int b;
+}
+public chain C {
+    if (M.a == 1 || M.b == 2) {
+        cmd("say or");
+    }
+}
+"#;
+        let unit = parse(src).unwrap();
+        let info = extract_binary_info(&unit);
+        let cfg = crate::config::MincConfig {
+            edition: crate::config::Edition::Bedrock,
+            pack: "demo".into(),
+            ..crate::config::MincConfig::default()
+        };
+        let dump =
+            crate::lower::dump_commands(&crate::lower::lower_project(&unit, &cfg, &info).unwrap());
+        let n = dump.matches("say or").count();
+        assert!(n >= 2, "OR should emit two execute lines:\n{dump}");
+    }
+
+    #[test]
+    fn java_hasitem_uses_if_items() {
+        let src = r#"
+pack demo;
+public chain C {
+    foreach (Player p : Players.all().hasItem(Items.GOLD_INGOT, 1)) {
+        as (p) { cmd("say gold"); }
+    }
+}
+"#;
+        let unit = parse(src).unwrap();
+        let info = extract_binary_info(&unit);
+        let cfg = crate::config::MincConfig {
+            edition: crate::config::Edition::Java,
+            pack: "demo".into(),
+            game_version: "1.21.11".into(),
+            ..crate::config::MincConfig::default()
+        };
+        let dump =
+            crate::lower::dump_commands(&crate::lower::lower_project(&unit, &cfg, &info).unwrap());
+        assert!(dump.contains("if items entity"), "{dump}");
+        assert!(!dump.contains("hasitem="), "{dump}");
+        assert!(!dump.contains("nbt="), "{dump}");
+    }
+
+    #[test]
+    fn link_at_label_emits_function() {
+        let src = r#"
+pack demo;
+public chain Lobby {
+    label start;
+    cmd("say hi");
+}
+public chain Play {
+    cmd("say play");
+}
+@Controller
+world W {
+    origin (0, 64, 0);
+    chain Lobby at (0, 70, 0) layout linear facing east;
+    chain Play at (2, 64, 0) layout stack facing up;
+    link Lobby.start => Play;
+}
+"#;
+        let unit = parse(src).unwrap();
+        let info = extract_binary_info(&unit);
+        assert_eq!(info.links[0].from_label.as_deref(), Some("start"));
+        let cfg = crate::config::MincConfig {
+            edition: crate::config::Edition::Bedrock,
+            pack: "demo".into(),
+            ..crate::config::MincConfig::default()
+        };
+        let dump =
+            crate::lower::dump_commands(&crate::lower::lower_project(&unit, &cfg, &info).unwrap());
+        assert!(dump.contains("function demo/chain/play"), "{dump}");
+    }
+
+    #[test]
+    fn java_only_cannot_be_called_from_shared() {
+        let src = r#"
+pack demo;
+public class A {
+    @JavaOnly
+    public static void javaThing() { cmd("say j"); }
+    public static void shared() { A.javaThing(); }
+}
+"#;
+        let unit = parse(src).unwrap();
+        let cfg = crate::config::MincConfig {
+            edition: crate::config::Edition::Java,
+            pack: "demo".into(),
+            ..crate::config::MincConfig::default()
+        };
+        let errors = sema::check_with_config(&unit, Some(&cfg));
+        assert!(
+            errors.iter().any(|e| e.message.contains("JavaOnly")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn cli_place_and_dump_mincb() {
+        let dir = std::path::PathBuf::from("target/test-minc-place");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(
+            crate::cli::run(vec![
+                "minc".into(),
+                "new".into(),
+                dir.display().to_string(),
+                "--edition".into(),
+                "bedrock".into(),
+                "--version".into(),
+                "1.21.70".into(),
+            ]),
+            0
+        );
+        assert_eq!(
+            crate::cli::run(vec![
+                "minc".into(),
+                "build".into(),
+                dir.display().to_string(),
+                "--out".into(),
+                "dist".into(),
+            ]),
+            0
+        );
+        let mincb = dir.join("dist/test-minc-place.mincb");
+        assert_eq!(
+            crate::cli::run(vec![
+                "minc".into(),
+                "inspect".into(),
+                mincb.display().to_string(),
+                "--chain".into(),
+                "Main".into(),
+            ]),
+            0
+        );
+        assert_eq!(
+            crate::cli::run(vec![
+                "minc".into(),
+                "dump".into(),
+                mincb.display().to_string(),
+                "--commands".into(),
+            ]),
+            0
+        );
+        let place_out = dir.join("dist/place");
+        assert_eq!(
+            crate::cli::run(vec![
+                "minc".into(),
+                "place".into(),
+                mincb.display().to_string(),
+                "--out".into(),
+                place_out.display().to_string(),
+            ]),
+            0
+        );
+        assert!(
+            place_out
+                .join("functions/test.minc.place/install.mcfunction")
+                .is_file()
+                || place_out
+                    .join("functions/test/minc/place/install.mcfunction")
+                    .is_file()
         );
     }
 

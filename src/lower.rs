@@ -81,6 +81,7 @@ enum ConstVal {
 struct Selector {
     var: String,
     args: Vec<(String, String)>,
+    java_items: Vec<(String, i64)>,
 }
 
 impl Selector {
@@ -88,6 +89,7 @@ impl Selector {
         Self {
             var: var.to_string(),
             args: Vec::new(),
+            java_items: Vec::new(),
         }
     }
 
@@ -307,25 +309,71 @@ impl<'a> Lower<'a> {
     }
 
     fn lower_chain(&mut self, chain: &ChainDef) -> Vec<(String, ChainCmdMeta)> {
-        let mut delay_next = 0u32;
         let mut out = Vec::new();
         let chain_repeat = chain.annotations.iter().any(|a| a.name == "Repeat");
         let chain_impulse = chain.annotations.iter().any(|a| a.name == "Impulse");
         let always = chain.annotations.iter().any(|a| a.name == "AlwaysActive")
             || !chain.annotations.iter().any(|a| a.name == "NeedsRedstone");
-        let stmts = flatten_annotated(&chain.body, &mut delay_next);
-        let cmds = self.lower_block(&stmts.iter().map(|(s, _)| (*s).clone()).collect::<Vec<_>>());
-        for (i, cmd) in cmds.into_iter().enumerate() {
-            let mut meta = ChainCmdMeta {
-                always_active: always,
-                repeat: chain_repeat && i == 0,
-                impulse: chain_impulse && i == 0,
-                ..ChainCmdMeta::default()
-            };
-            if let Some((_, d)) = stmts.get(i) {
-                meta.delay = *d;
+        let mut pending_label: Option<String> = None;
+        for raw in &chain.body {
+            let (inner, mut meta) = peel_stmt_meta(raw);
+            meta.always_active = always;
+            if chain_repeat && out.is_empty() {
+                meta.repeat = true;
             }
-            out.push((cmd, meta));
+            if chain_impulse && out.is_empty() {
+                meta.impulse = true;
+            }
+            match inner {
+                Stmt::Label(name) => {
+                    pending_label = Some(name.clone());
+                    for cmd in self.link_cmds(&chain.name, &name) {
+                        let mut m = meta.clone();
+                        m.label = Some(name.clone());
+                        out.push((cmd, m));
+                    }
+                }
+                other => {
+                    let cmds = match other {
+                        Stmt::Return(_) | Stmt::Local { .. } => self.lower_block(&[other.clone()]),
+                        _ => self.lower_stmt(&other),
+                    };
+                    for (i, cmd) in cmds.into_iter().enumerate() {
+                        let mut m = meta.clone();
+                        if i > 0 {
+                            m.conditional = false;
+                            m.delay = 0;
+                            m.label = None;
+                            m.at = None;
+                        } else if let Some(lab) = pending_label.take() {
+                            m.label = Some(lab);
+                        }
+                        out.push((cmd, m));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    fn link_cmds(&self, chain: &str, label: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for link in &self.info.links {
+            if link.from_chain == chain && link.from_label.as_deref() == Some(label) {
+                let path = match self.config.edition {
+                    Edition::Bedrock => format!(
+                        "{}/chain/{}",
+                        self.config.bedrock_fn_prefix(),
+                        link.to.to_lowercase()
+                    ),
+                    Edition::Java => format!(
+                        "{}:chain/{}",
+                        self.config.java_namespace(),
+                        link.to.to_lowercase()
+                    ),
+                };
+                out.push(format!("function {path}"));
+            }
         }
         out
     }
@@ -376,7 +424,12 @@ impl<'a> Lower<'a> {
                     }
                 }
                 Stmt::Label(_) => {}
-                Stmt::Return(_) => break,
+                Stmt::Return(_) => {
+                    if self.config.edition == Edition::Java {
+                        out.push("return".into());
+                    }
+                    break;
+                }
                 other => out.extend(self.lower_stmt(other)),
             }
             i += 1;
@@ -397,11 +450,7 @@ impl<'a> Lower<'a> {
                     .as_ref()
                     .map(|b| self.lower_block(b))
                     .unwrap_or_default();
-                let yes = self.cond_clauses(cond, false);
-                let no = self.cond_clauses(cond, true);
-                let mut out = wrap_clauses(&yes, then_cmds);
-                out.extend(wrap_clauses(&no, else_cmds));
-                out
+                self.emit_if(cond, then_cmds, else_cmds)
             }
             Stmt::Foreach {
                 name, iter, body, ..
@@ -417,7 +466,9 @@ impl<'a> Lower<'a> {
                     self.bindings.remove(name);
                 }
                 let merged = merge_as_at(&inner);
-                wrap_clauses(&[format!("as {}", sel.emit())], merged)
+                let mut clauses = vec![format!("as {}", sel.emit())];
+                clauses.extend(self.java_item_clauses(&sel));
+                wrap_clauses(&clauses, merged)
             }
             Stmt::Context { prefixes, body } => {
                 let mut clauses = Vec::new();
@@ -436,6 +487,9 @@ impl<'a> Lower<'a> {
                             }
                         }
                         ContextPrefix::At(e) => {
+                            if triple_ints(e).is_some() {
+                                continue;
+                            }
                             let sel = self
                                 .selector_of(e)
                                 .map(|s| s.emit())
@@ -915,7 +969,14 @@ impl<'a> Lower<'a> {
                     Edition::Bedrock => sel
                         .args
                         .push(("hasitem".into(), format!("{{item={item},quantity={n}..}}"))),
-                    Edition::Java => {}
+                    Edition::Java => {
+                        let item = if item.contains(':') {
+                            item
+                        } else {
+                            format!("minecraft:{item}")
+                        };
+                        sel.java_items.push((item, n));
+                    }
                 }
             }
             _ => return None,
@@ -1016,6 +1077,64 @@ impl<'a> Lower<'a> {
         }
     }
 
+    fn emit_if(&self, cond: &Expr, then_cmds: Vec<String>, else_cmds: Vec<String>) -> Vec<String> {
+        let mut out = Vec::new();
+        let or_parts = flatten_or(cond);
+        for part in &or_parts {
+            let yes = self.and_clauses(part, false);
+            out.extend(wrap_clauses(&yes, then_cmds.clone()));
+        }
+        if !else_cmds.is_empty() {
+            if or_parts.len() > 1 {
+                let mut no = Vec::new();
+                for part in &or_parts {
+                    no.extend(self.and_clauses(part, true));
+                }
+                out.extend(wrap_clauses(&no, else_cmds));
+            } else if let Expr::Binary {
+                op: BinOp::And,
+                lhs,
+                rhs,
+            } = cond
+            {
+                out.extend(wrap_clauses(
+                    &self.and_clauses(lhs, true),
+                    else_cmds.clone(),
+                ));
+                out.extend(wrap_clauses(&self.and_clauses(rhs, true), else_cmds));
+            } else {
+                let no = self.and_clauses(cond, true);
+                out.extend(wrap_clauses(&no, else_cmds));
+            }
+        }
+        out
+    }
+
+    fn and_clauses(&self, expr: &Expr, invert: bool) -> Vec<String> {
+        match expr {
+            Expr::Binary {
+                op: BinOp::And,
+                lhs,
+                rhs,
+            } if !invert => {
+                let mut a = self.and_clauses(lhs, false);
+                a.extend(self.and_clauses(rhs, false));
+                a
+            }
+            other => self.cond_clauses(other, invert),
+        }
+    }
+
+    fn java_item_clauses(&self, sel: &Selector) -> Vec<String> {
+        if self.config.edition != Edition::Java {
+            return Vec::new();
+        }
+        sel.java_items
+            .iter()
+            .map(|(item, n)| format!("if items entity @s container.* {item} {n}.."))
+            .collect()
+    }
+
     fn cond_clauses(&self, expr: &Expr, invert: bool) -> Vec<String> {
         match expr {
             Expr::Binary {
@@ -1025,8 +1144,7 @@ impl<'a> Lower<'a> {
             } => {
                 let mut a = self.cond_clauses(lhs, invert);
                 if invert {
-                    // !(A && B) = !A || !B — emit as unless A, plus a second path handled by caller
-                    return self.cond_clauses(lhs, true);
+                    return a;
                 }
                 a.extend(self.cond_clauses(rhs, false));
                 a
@@ -1076,7 +1194,11 @@ impl<'a> Lower<'a> {
                     if name == "exists" {
                         if let Some(sel) = self.selector_of(base) {
                             let word = if invert { "unless" } else { "if" };
-                            return vec![format!("{word} entity {}", sel.emit())];
+                            let mut clauses = vec![format!("{word} entity {}", sel.emit())];
+                            if !invert {
+                                clauses.extend(self.java_item_clauses(&sel));
+                            }
+                            return clauses;
                         }
                     }
                     if name == "in" {
@@ -1163,37 +1285,73 @@ impl<'a> Lower<'a> {
     }
 }
 
-fn flatten_annotated<'a>(stmts: &'a [Stmt], delay: &mut u32) -> Vec<(&'a Stmt, u32)> {
-    let mut out = Vec::new();
-    for s in stmts {
-        match s {
+fn peel_stmt_meta(stmt: &Stmt) -> (Stmt, ChainCmdMeta) {
+    let mut meta = ChainCmdMeta::default();
+    let mut cur = stmt;
+    loop {
+        match cur {
             Stmt::Annotated { annotations, inner } => {
-                let mut d = *delay;
-                *delay = 0;
                 for a in annotations {
-                    if a.name == "Delay" {
-                        if let Some(Expr::Int(n)) = a.args.first() {
-                            d = *n as u32;
+                    match a.name.as_str() {
+                        "Delay" => {
+                            if let Some(Expr::Int(n)) = a.args.first() {
+                                meta.delay = *n as u32;
+                            }
+                        }
+                        "Conditional" => meta.conditional = true,
+                        "Impulse" => meta.impulse = true,
+                        "Repeat" => meta.repeat = true,
+                        "AlwaysActive" => meta.always_active = true,
+                        "NeedsRedstone" => meta.always_active = false,
+                        _ => {}
+                    }
+                }
+                cur = inner;
+            }
+            Stmt::Context { prefixes, body } => {
+                for p in prefixes {
+                    if let ContextPrefix::At(e) = p {
+                        if let Some(coords) = triple_ints(e) {
+                            meta.at = Some(coords);
                         }
                     }
                 }
-                if let Stmt::Annotated { .. } = inner.as_ref() {
-                    out.extend(flatten_annotated(
-                        std::slice::from_ref(inner.as_ref()),
-                        delay,
-                    ));
-                } else {
-                    out.push((inner.as_ref(), d));
+                if body.len() == 1 {
+                    let (inner, nested) = peel_stmt_meta(&body[0]);
+                    if nested.delay != 0 {
+                        meta.delay = nested.delay;
+                    }
+                    if nested.conditional {
+                        meta.conditional = true;
+                    }
+                    if nested.at.is_some() {
+                        meta.at = nested.at;
+                    }
+                    return (inner, meta);
                 }
+                return (cur.clone(), meta);
             }
-            other => {
-                let d = *delay;
-                *delay = 0;
-                out.push((other, d));
-            }
+            other => return (other.clone(), meta),
         }
     }
-    out
+}
+
+fn triple_ints(expr: &Expr) -> Option<[i32; 3]> {
+    match expr {
+        Expr::Call { callee, args } => {
+            if let Expr::Field { name, .. } = callee.as_ref() {
+                if name == "of" && args.len() == 3 {
+                    return Some([
+                        expr_int(&args[0])? as i32,
+                        expr_int(&args[1])? as i32,
+                        expr_int(&args[2])? as i32,
+                    ]);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
 }
 
 fn flatten_or(expr: &Expr) -> Vec<&Expr> {
@@ -1267,6 +1425,8 @@ fn string_lit(expr: &Expr) -> Option<String> {
 fn eval_int(expr: &Expr, enums: &HashMap<String, Vec<String>>) -> Option<i64> {
     match expr {
         Expr::Int(n) => Some(*n),
+        Expr::Bool(true) => Some(1),
+        Expr::Bool(false) => Some(0),
         Expr::Unary {
             op: UnaryOp::Neg,
             expr,

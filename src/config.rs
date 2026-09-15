@@ -56,11 +56,15 @@ pub struct MincConfig {
     pub default_facing: String,
     pub max_span: u32,
     pub clock: Option<String>,
+    /// `"one"` (default) or `"function"`.
+    pub chain_pack: String,
+    pub prefer: String,
     pub default_cb_type: String,
     pub default_redstone: String,
     pub default_conditional: bool,
     pub track_output: bool,
     pub function_command_limit: u32,
+    pub strict_raw: bool,
 }
 
 impl Default for MincConfig {
@@ -80,11 +84,14 @@ impl Default for MincConfig {
             default_facing: "up".into(),
             max_span: 32,
             clock: None,
+            chain_pack: "one".into(),
+            prefer: "execute".into(),
             default_cb_type: "chain".into(),
             default_redstone: "always_active".into(),
             default_conditional: false,
             track_output: false,
             function_command_limit: 10_000,
+            strict_raw: false,
         }
     }
 }
@@ -181,6 +188,8 @@ pub fn parse_minc_toml(text: &str) -> Result<MincConfig, String> {
             ("chains", "default_facing") => cfg.default_facing = parse_string(val)?,
             ("chains", "max_span") => cfg.max_span = parse_u32(val)?,
             ("chains", "clock") => cfg.clock = Some(parse_string(val)?),
+            ("chains", "pack") => cfg.chain_pack = parse_string(val)?,
+            ("chains", "prefer") => cfg.prefer = parse_string(val)?,
             ("command_block", "default_type") => cfg.default_cb_type = parse_string(val)?,
             ("command_block", "default_redstone") => cfg.default_redstone = parse_string(val)?,
             ("command_block", "default_conditional") => {
@@ -229,7 +238,8 @@ origin = [{ox}, {oy}, {oz}]
 default_layout = "{layout}"
 default_facing = "{facing}"
 max_span = {span}
-{clock}
+{clock}pack = "{cpack}"
+prefer = "{prefer}"
 [command_block]
 default_type = "{cb}"
 default_redstone = "{red}"
@@ -259,6 +269,8 @@ function_command_limit = {limit}
             .as_ref()
             .map(|c| format!("clock = \"{c}\"\n"))
             .unwrap_or_default(),
+        cpack = cfg.chain_pack,
+        prefer = cfg.prefer,
         cb = cfg.default_cb_type,
         red = cfg.default_redstone,
         cond = cfg.default_conditional,

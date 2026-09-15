@@ -1,6 +1,6 @@
 use crate::ast::{
-    CompilationUnit, ContainerKind, Expr, FieldDef, Item, Member, PlaceStmt, TypeRef, UnaryOp,
-    WorldClause,
+    CompilationUnit, ContainerKind, Expr, FieldDef, Item, Member, PlaceStmt, Stmt, TypeRef,
+    UnaryOp, WorldClause,
 };
 
 /// MINCB-facing facts extracted from a parsed compilation unit (or merged project).
@@ -36,6 +36,7 @@ pub enum SymbolKind {
     FakePlayer = 2,
     Function = 3,
     Chain = 4,
+    Label = 5,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +49,8 @@ pub struct ChainInfo {
     pub absolute: bool,
     pub bound: Option<[i64; 3]>,
     pub is_clock: bool,
+    pub pack_mode: Option<String>,
+    pub labels: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,9 +159,9 @@ pub fn extract_binary_info_with_revision(
         qualified: format!("{pack}.#mcs"),
     });
     symbols.push(Symbol {
-        id: "mt".into(),
+        id: "mi".into(),
         kind: SymbolKind::Objective,
-        qualified: format!("{pack}.#temps"),
+        qualified: format!("{pack}.#inited"),
     });
     for (qualified, kind) in field_names {
         let id = match kind {
@@ -214,6 +217,14 @@ pub fn extract_binary_info_with_revision(
                 let annotations: Vec<String> =
                     chain.annotations.iter().map(|a| a.name.clone()).collect();
                 let is_clock = annotations.iter().any(|n| n == "Repeat");
+                let labels = collect_labels(&chain.body);
+                for label in &labels {
+                    symbols.push(Symbol {
+                        id: format!("{}_{}", chain.name, label),
+                        kind: SymbolKind::Label,
+                        qualified: format!("{pack}.chain.{}.{}", chain.name, label),
+                    });
+                }
                 symbols.push(Symbol {
                     id: chain.name.clone(),
                     kind: SymbolKind::Chain,
@@ -228,6 +239,8 @@ pub fn extract_binary_info_with_revision(
                     absolute: false,
                     bound: None,
                     is_clock,
+                    pack_mode: None,
+                    labels,
                 });
             }
             Item::World(world) => {
@@ -330,6 +343,7 @@ pub fn extract_binary_info_with_revision(
             facing,
             absolute,
             bound,
+            pack_mode,
         } = place
         {
             if let Some(chain) = chains.iter_mut().find(|c| c.name == name) {
@@ -338,6 +352,7 @@ pub fn extract_binary_info_with_revision(
                 chain.origin = coords_3(&at);
                 chain.absolute = absolute;
                 chain.bound = bound.as_deref().and_then(coords_3);
+                chain.pack_mode = pack_mode;
             }
         }
     }
@@ -363,6 +378,41 @@ pub fn extract_binary_info_with_revision(
         host_tick,
         functions,
     }
+}
+
+fn collect_labels(stmts: &[Stmt]) -> Vec<String> {
+    let mut out = Vec::new();
+    for stmt in stmts {
+        match stmt {
+            Stmt::Label(name) => out.push(name.clone()),
+            Stmt::Annotated { inner, .. } => {
+                out.extend(collect_labels(std::slice::from_ref(inner)))
+            }
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                out.extend(collect_labels(then_body));
+                if let Some(e) = else_body {
+                    out.extend(collect_labels(e));
+                }
+            }
+            Stmt::Foreach { body, .. } | Stmt::Context { body, .. } => {
+                out.extend(collect_labels(body));
+            }
+            Stmt::Switch { arms, default, .. } => {
+                for (_, body) in arms {
+                    out.extend(collect_labels(body));
+                }
+                if let Some(body) = default {
+                    out.extend(collect_labels(body));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 fn kind_of_field(field: &FieldDef) -> Option<SymbolKind> {
@@ -411,6 +461,7 @@ impl BinaryInfo {
                 SymbolKind::FakePlayer => "fake",
                 SymbolKind::Function => "fn",
                 SymbolKind::Chain => "chain",
+                SymbolKind::Label => "label",
             };
             out.push_str(&format!("  {kind} {} {}\n", sym.id, sym.qualified));
         }

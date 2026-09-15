@@ -84,13 +84,15 @@ pub struct LayoutRequest {
     pub bound: Option<[i32; 3]>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChainCmdMeta {
     pub conditional: bool,
     pub delay: u32,
     pub impulse: bool,
     pub repeat: bool,
     pub always_active: bool,
+    pub at: Option<[i32; 3]>,
+    pub label: Option<String>,
 }
 
 impl Default for ChainCmdMeta {
@@ -101,6 +103,8 @@ impl Default for ChainCmdMeta {
             impulse: false,
             repeat: false,
             always_active: true,
+            at: None,
+            label: None,
         }
     }
 }
@@ -129,11 +133,14 @@ pub fn place_commands(
             bound.unwrap_or([max_span as i32, n as i32, 1]),
             n,
         )?,
-        "points" => {
-            return Err(
-                "points layout requires per-statement coordinates (not in this flatten)".into(),
-            );
-        }
+        "points" => commands
+            .iter()
+            .enumerate()
+            .map(|(i, (_, meta))| {
+                meta.at
+                    .unwrap_or([origin[0], origin[1] + i as i32, origin[2]])
+            })
+            .collect(),
         other => return Err(format!("unknown layout `{other}`")),
     };
     if coords.len() != n {
@@ -178,7 +185,7 @@ pub fn place_commands(
             flags,
             delay_ticks: meta.delay,
             command: cmd.clone(),
-            label: None,
+            label: meta.label.clone(),
         });
     }
     Ok(out)

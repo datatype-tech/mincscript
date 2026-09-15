@@ -55,7 +55,21 @@ pub fn load_project(root: &Path) -> Result<LoadedProject, Vec<Diagnostic>> {
             )]
         })?;
         match parse(&source) {
-            Ok(unit) => files.push(ParsedFile { path, source, unit }),
+            Ok(mut unit) => {
+                unit.file = Some(path.display().to_string());
+                let pack = unit.pack.dotted();
+                if pack != config.pack && !pack.starts_with(&format!("{}.", config.pack)) {
+                    errors.push(Diagnostic {
+                        span: unit.pack_span.clone(),
+                        message: format!(
+                            "pack `{pack}` must equal `{}` or a subpackage of it",
+                            config.pack
+                        ),
+                        file: Some(path.display().to_string()),
+                    });
+                }
+                files.push(ParsedFile { path, source, unit });
+            }
             Err(mut diags) => {
                 for d in &mut diags {
                     d.file = Some(path.display().to_string());

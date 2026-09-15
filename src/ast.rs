@@ -1,9 +1,13 @@
 use std::fmt;
 
+use crate::span::Span;
+
 /// A parsed MincScript compilation unit (`docs/language/`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompilationUnit {
     pub pack: PathName,
+    pub pack_span: Span,
+    pub file: Option<String>,
     pub imports: Vec<PathName>,
     pub items: Vec<Item>,
 }
@@ -145,6 +149,8 @@ pub enum WorldClause {
         layout: Option<String>,
         facing: Option<String>,
         bound: Option<Vec<Expr>>,
+        /// `"one"` (one CB per command) or `"function"` (single CB + function body).
+        pack_mode: Option<String>,
     },
     Clock(String),
     HostTick(String),

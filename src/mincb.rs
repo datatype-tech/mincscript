@@ -163,7 +163,11 @@ pub fn image_from_extract(info: &BinaryInfo, edition: Edition, game_version: &st
             origin: [origin[0] as i32, origin[1] as i32, origin[2] as i32],
             length: 0,
             clock: u8::from(chain.is_clock),
-            pack_mode: 0,
+            pack_mode: if chain.pack_mode.as_deref() == Some("function") {
+                1
+            } else {
+                0
+            },
         });
     }
     let world_blocks = info
@@ -201,10 +205,14 @@ pub fn image_from_extract(info: &BinaryInfo, edition: Edition, game_version: &st
     let links = info
         .links
         .iter()
-        .map(|_l| LinkRec {
-            from_chain: 0,
-            from_label: 0,
-            to_chain: 0,
+        .map(|l| LinkRec {
+            from_chain: symb_id_ending(&symbols, &format!(".chain.{}", l.from_chain)),
+            from_label: l
+                .from_label
+                .as_ref()
+                .map(|lab| symb_id_ending(&symbols, &format!(".chain.{}.{}", l.from_chain, lab)))
+                .unwrap_or(0),
+            to_chain: symb_id_ending(&symbols, &format!(".chain.{}", l.to)),
             kind: 0,
         })
         .collect();
@@ -261,14 +269,41 @@ fn serde_meta(
         ));
     }
     areas.push(']');
+    let mut fills = String::from("[");
+    for (i, f) in info.fills.iter().enumerate() {
+        if i > 0 {
+            fills.push(',');
+        }
+        fills.push_str(&format!(
+            "{{\"from\":[{},{},{}],\"to\":[{},{},{}],\"block\":\"{}\",\"replace\":\"{}\"}}",
+            f.from[0],
+            f.from[1],
+            f.from[2],
+            f.to[0],
+            f.to[1],
+            f.to[2],
+            f.block,
+            f.replace.as_deref().unwrap_or("")
+        ));
+    }
+    fills.push(']');
     format!(
-        "{{\"edition\":\"{}\",\"game_version\":\"{}\",\"host_tick\":\"{}\",\"dimension\":\"{}\",\"ticking_areas\":{}}}",
+        "{{\"edition\":\"{}\",\"game_version\":\"{}\",\"host_tick\":\"{}\",\"dimension\":\"{}\",\"ticking_areas\":{},\"fills\":{}}}",
         edition.as_str(),
         game_version,
         host.unwrap_or(""),
         info.dimension.as_deref().unwrap_or("overworld"),
-        areas
+        areas,
+        fills
     )
+}
+
+fn symb_id_ending(symbols: &[SymbRec], suffix: &str) -> u16 {
+    symbols
+        .iter()
+        .find(|s| s.qualified.ends_with(suffix))
+        .map(|s| s.id)
+        .unwrap_or(0)
 }
 
 pub fn layout_id(layout: Option<&str>) -> u8 {
@@ -291,6 +326,18 @@ pub fn facing_id(facing: Option<&str>) -> u8 {
         "west" => 4,
         "east" => 5,
         _ => 1,
+    }
+}
+
+pub fn facing_name(id: u8) -> &'static str {
+    match id {
+        0 => "down",
+        1 => "up",
+        2 => "north",
+        3 => "south",
+        4 => "west",
+        5 => "east",
+        _ => "up",
     }
 }
 
@@ -556,8 +603,74 @@ pub fn inspect_text(bytes: &[u8], info: Option<&BinaryInfo>, blocks: &[CbInstanc
                 ));
             }
         }
-    } else if let Some(extra) = decode_sections(bytes) {
-        out.push_str(&extra);
+    } else if let Some(image) = decode_image(bytes) {
+        out.push_str("symbols:\n");
+        for s in &image.symbols {
+            let kn = match s.kind {
+                0 => "obj",
+                1 => "tag",
+                2 => "fake",
+                3 => "fn",
+                4 => "chain",
+                5 => "label",
+                _ => "?",
+            };
+            out.push_str(&format!("  {kn} {} {} (#{})\n", s.short, s.qualified, s.id));
+        }
+        out.push_str("chains:\n");
+        let mut cursor = 0usize;
+        for c in &image.chains {
+            let name = symb_name(&image, c.name_symb);
+            let len = c.length as usize;
+            let slice = image
+                .command_blocks
+                .get(cursor..cursor + len)
+                .unwrap_or(&[]);
+            let mut min = c.origin;
+            let mut max = c.origin;
+            for b in slice {
+                min = [min[0].min(b.x), min[1].min(b.y), min[2].min(b.z)];
+                max = [max[0].max(b.x), max[1].max(b.y), max[2].max(b.z)];
+            }
+            out.push_str(&format!(
+                "  {name} layout={} facing={} origin={:?} length={} clock={} bbox {:?}..{:?}\n",
+                c.layout, c.facing, c.origin, c.length, c.clock, min, max
+            ));
+            if let Some(first) = slice.first() {
+                out.push_str(&format!(
+                    "    first_cb {} {} {} {}\n",
+                    first.x, first.y, first.z, first.command
+                ));
+            }
+            if let Some(last) = slice.last() {
+                out.push_str(&format!(
+                    "    last_cb {} {} {} {}\n",
+                    last.x, last.y, last.z, last.command
+                ));
+            }
+            cursor += len;
+        }
+        if !image.containers.is_empty() {
+            out.push_str("containers:\n");
+            for c in &image.containers {
+                out.push_str(&format!(
+                    "  {} at {} {} {} slots={}\n",
+                    c.block,
+                    c.x,
+                    c.y,
+                    c.z,
+                    c.slots.len()
+                ));
+                for s in &c.slots {
+                    out.push_str(&format!("    slot {} {} * {}\n", s.slot, s.item, s.count));
+                }
+            }
+        }
+        if !image.meta_json.is_empty() {
+            out.push_str("meta ");
+            out.push_str(&image.meta_json);
+            out.push('\n');
+        }
     }
     if let Some(first) = blocks.first() {
         out.push_str(&format!(
@@ -574,9 +687,25 @@ pub fn inspect_text(bytes: &[u8], info: Option<&BinaryInfo>, blocks: &[CbInstanc
     out
 }
 
-fn decode_sections(bytes: &[u8]) -> Option<String> {
+/// Decode a full MINCB image (header + every section).
+pub fn decode_image(bytes: &[u8]) -> Option<MincbImage> {
+    let h = decode_header(bytes)?;
+    let edition = match h.edition {
+        1 => Edition::Java,
+        2 => Edition::Bedrock,
+        _ => return None,
+    };
     let count = u32::from_le_bytes(bytes.get(36..40)?.try_into().ok()?) as usize;
-    let mut out = String::new();
+    let mut symbols = Vec::new();
+    let mut objectives = Vec::new();
+    let mut functions = Vec::new();
+    let mut chains = Vec::new();
+    let mut command_blocks = Vec::new();
+    let mut world_blocks = Vec::new();
+    let mut containers = Vec::new();
+    let mut links = Vec::new();
+    let mut meta_json = String::new();
+
     for i in 0..count {
         let off = 40 + i * 16;
         let id = u32::from_le_bytes(bytes.get(off..off + 4)?.try_into().ok()?);
@@ -585,44 +714,328 @@ fn decode_sections(bytes: &[u8]) -> Option<String> {
         let n = u32::from_le_bytes(bytes.get(off + 12..off + 16)?.try_into().ok()?) as usize;
         let body = bytes.get(offset..offset + size)?;
         if id == SID_SYMB {
-            out.push_str("symbols:\n");
             let mut p = 0usize;
             for _ in 0..n {
-                if p + 3 > body.len() {
-                    break;
-                }
-                let sid = u16::from_le_bytes(body[p..p + 2].try_into().ok()?);
-                let kind = body[p + 2];
+                let sid = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
+                let kind = *body.get(p + 2)?;
                 p += 3;
                 let (short, used) = read_str16(body.get(p..)?)?;
                 p += used;
                 let (qualified, used) = read_str16(body.get(p..)?)?;
                 p += used;
-                let kn = match kind {
-                    0 => "obj",
-                    1 => "tag",
-                    2 => "fake",
-                    3 => "fn",
-                    4 => "chain",
-                    _ => "?",
+                symbols.push(SymbRec {
+                    id: sid,
+                    kind,
+                    short,
+                    qualified,
+                });
+            }
+        } else if id == SID_OBJT {
+            let mut p = 0usize;
+            for _ in 0..n {
+                let symb = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
+                let dummy_only = *body.get(p + 2)?;
+                p += 3;
+                let has = *body.get(p)?;
+                p += 1;
+                let display = if has == 1 {
+                    let (d, used) = read_str16(body.get(p..)?)?;
+                    p += used;
+                    Some(d)
+                } else {
+                    None
                 };
-                out.push_str(&format!("  {kn} {short} {qualified} (#{sid})\n"));
+                objectives.push(ObjtRec {
+                    symb,
+                    dummy_only,
+                    display,
+                });
+            }
+        } else if id == SID_FUNC {
+            let mut p = 0usize;
+            for _ in 0..n {
+                let symb = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
+                p += 2;
+                let (path, used) = read_str16(body.get(p..)?)?;
+                p += used;
+                let blen = u32::from_le_bytes(body.get(p..p + 4)?.try_into().ok()?) as usize;
+                p += 4;
+                let body_s = std::str::from_utf8(body.get(p..p + blen)?)
+                    .ok()?
+                    .to_string();
+                p += blen;
+                functions.push(FuncRec {
+                    symb,
+                    path,
+                    body: body_s,
+                });
+            }
+        } else if id == SID_CHAIN {
+            let mut p = 0usize;
+            for _ in 0..n {
+                let name_symb = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
+                p += 2;
+                let layout = *body.get(p)?;
+                let facing = *body.get(p + 1)?;
+                p += 2;
+                let ox = i32::from_le_bytes(body.get(p..p + 4)?.try_into().ok()?);
+                let oy = i32::from_le_bytes(body.get(p + 4..p + 8)?.try_into().ok()?);
+                let oz = i32::from_le_bytes(body.get(p + 8..p + 12)?.try_into().ok()?);
+                p += 12;
+                let length = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
+                p += 2;
+                let clock = *body.get(p)?;
+                let pack_mode = *body.get(p + 1)?;
+                p += 2;
+                chains.push(ChainRec {
+                    name_symb,
+                    layout,
+                    facing,
+                    origin: [ox, oy, oz],
+                    length,
+                    clock,
+                    pack_mode,
+                });
             }
         } else if id == SID_CBLK {
-            out.push_str(&format!("command_blocks: {n}\n"));
-            if n > 0 {
-                let x = i32::from_le_bytes(body.get(0..4)?.try_into().ok()?);
-                let y = i32::from_le_bytes(body.get(4..8)?.try_into().ok()?);
-                let z = i32::from_le_bytes(body.get(8..12)?.try_into().ok()?);
-                let mut q = 12 + 1 + 1 + 1 + 4;
-                let clen = u32::from_le_bytes(body.get(q..q + 4)?.try_into().ok()?) as usize;
-                q += 4;
-                let cmd = std::str::from_utf8(body.get(q..q + clen)?).ok()?;
-                out.push_str(&format!("first_cb {x} {y} {z} {cmd}\n"));
+            let mut p = 0usize;
+            for _ in 0..n {
+                let x = i32::from_le_bytes(body.get(p..p + 4)?.try_into().ok()?);
+                let y = i32::from_le_bytes(body.get(p + 4..p + 8)?.try_into().ok()?);
+                let z = i32::from_le_bytes(body.get(p + 8..p + 12)?.try_into().ok()?);
+                p += 12;
+                let facing = *body.get(p)?;
+                let mode = *body.get(p + 1)?;
+                let flags = *body.get(p + 2)?;
+                p += 3;
+                let delay_ticks = u32::from_le_bytes(body.get(p..p + 4)?.try_into().ok()?);
+                p += 4;
+                let clen = u32::from_le_bytes(body.get(p..p + 4)?.try_into().ok()?) as usize;
+                p += 4;
+                let command = std::str::from_utf8(body.get(p..p + clen)?)
+                    .ok()?
+                    .to_string();
+                p += clen;
+                command_blocks.push(CblkRec {
+                    x,
+                    y,
+                    z,
+                    facing,
+                    mode,
+                    flags,
+                    delay_ticks,
+                    command,
+                });
             }
+        } else if id == SID_WBLK {
+            let pal_n = u32::from_le_bytes(body.get(0..4)?.try_into().ok()?) as usize;
+            let mut p = 4usize;
+            let mut palette = Vec::new();
+            for _ in 0..pal_n {
+                let (name, used) = read_str16(body.get(p..)?)?;
+                p += used;
+                palette.push(name);
+            }
+            for _ in 0..n {
+                let x = i32::from_le_bytes(body.get(p..p + 4)?.try_into().ok()?);
+                let y = i32::from_le_bytes(body.get(p + 4..p + 8)?.try_into().ok()?);
+                let z = i32::from_le_bytes(body.get(p + 8..p + 12)?.try_into().ok()?);
+                p += 12;
+                let idx = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
+                p += 2;
+                let _state = u32::from_le_bytes(body.get(p..p + 4)?.try_into().ok()?);
+                p += 4;
+                world_blocks.push(WblkRec {
+                    x,
+                    y,
+                    z,
+                    block: palette.get(idx as usize).cloned().unwrap_or_default(),
+                });
+            }
+        } else if id == SID_CONT {
+            let mut p = 0usize;
+            for _ in 0..n {
+                let x = i32::from_le_bytes(body.get(p..p + 4)?.try_into().ok()?);
+                let y = i32::from_le_bytes(body.get(p + 4..p + 8)?.try_into().ok()?);
+                let z = i32::from_le_bytes(body.get(p + 8..p + 12)?.try_into().ok()?);
+                p += 12;
+                let (block, used) = read_str16(body.get(p..)?)?;
+                p += used;
+                let facing = *body.get(p)?;
+                p += 1;
+                let slot_n = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
+                p += 2;
+                let mut slots = Vec::new();
+                for _ in 0..slot_n {
+                    let slot = *body.get(p)?;
+                    p += 1;
+                    let (item, used) = read_str16(body.get(p..)?)?;
+                    p += used;
+                    let count = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
+                    p += 2;
+                    let data = i32::from_le_bytes(body.get(p..p + 4)?.try_into().ok()?);
+                    p += 4;
+                    let nlen = u32::from_le_bytes(body.get(p..p + 4)?.try_into().ok()?) as usize;
+                    p += 4;
+                    let nbt = std::str::from_utf8(body.get(p..p + nlen)?)
+                        .ok()?
+                        .to_string();
+                    p += nlen;
+                    slots.push(ContSlot {
+                        slot,
+                        item,
+                        count,
+                        data,
+                        nbt,
+                    });
+                }
+                containers.push(ContRec {
+                    x,
+                    y,
+                    z,
+                    block,
+                    facing,
+                    slots,
+                });
+            }
+        } else if id == SID_LINK {
+            let mut p = 0usize;
+            for _ in 0..n {
+                let from_chain = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
+                let from_label = u16::from_le_bytes(body.get(p + 2..p + 4)?.try_into().ok()?);
+                let to_chain = u16::from_le_bytes(body.get(p + 4..p + 6)?.try_into().ok()?);
+                let kind = *body.get(p + 6)?;
+                p += 7;
+                links.push(LinkRec {
+                    from_chain,
+                    from_label,
+                    to_chain,
+                    kind,
+                });
+            }
+        } else if id == SID_META {
+            let len = u32::from_le_bytes(body.get(0..4)?.try_into().ok()?) as usize;
+            meta_json = std::str::from_utf8(body.get(4..4 + len)?).ok()?.to_string();
         }
     }
-    Some(out)
+
+    Some(MincbImage {
+        edition,
+        game_version: h.game_version,
+        pack: h.pack,
+        origin: h.origin,
+        score_revision: h.score_revision,
+        symbols,
+        objectives,
+        functions,
+        chains,
+        command_blocks,
+        world_blocks,
+        containers,
+        links,
+        meta_json,
+    })
+}
+
+pub fn symb_name(image: &MincbImage, id: u16) -> String {
+    image
+        .symbols
+        .iter()
+        .find(|s| s.id == id)
+        .map(|s| {
+            s.qualified
+                .rsplit('.')
+                .next()
+                .unwrap_or(&s.short)
+                .to_string()
+        })
+        .unwrap_or_else(|| id.to_string())
+}
+
+/// Print FUNC bodies and CBLK command strings from a decoded image.
+pub fn dump_commands_from_image(image: &MincbImage) -> String {
+    let mut out = String::new();
+    for f in &image.functions {
+        out.push_str(&format!("# function {}\n", f.path));
+        out.push_str(&f.body);
+        if !f.body.ends_with('\n') {
+            out.push('\n');
+        }
+    }
+    let mut cursor = 0usize;
+    for chain in &image.chains {
+        let name = symb_name(image, chain.name_symb);
+        let len = chain.length as usize;
+        let slice = image
+            .command_blocks
+            .get(cursor..cursor + len)
+            .unwrap_or(&[]);
+        out.push_str(&format!("# chain {name}\n"));
+        for b in slice {
+            out.push_str(&b.command);
+            out.push('\n');
+        }
+        cursor += len;
+    }
+    if image.chains.is_empty() {
+        for b in &image.command_blocks {
+            out.push_str(&b.command);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+pub fn inspect_chain_text(image: &MincbImage, chain_name: &str) -> String {
+    let mut cursor = 0usize;
+    for chain in &image.chains {
+        let name = symb_name(image, chain.name_symb);
+        let len = chain.length as usize;
+        let slice = image
+            .command_blocks
+            .get(cursor..cursor + len)
+            .unwrap_or(&[]);
+        if name == chain_name {
+            let mut min = chain.origin;
+            let mut max = chain.origin;
+            for b in slice {
+                min = [min[0].min(b.x), min[1].min(b.y), min[2].min(b.z)];
+                max = [max[0].max(b.x), max[1].max(b.y), max[2].max(b.z)];
+            }
+            let mut out = format!(
+                "chain {name}\nlayout {} facing {} origin {} {} {}\nlength {} clock {} pack_mode {}\nbbox {} {} {} .. {} {} {}\n",
+                chain.layout,
+                chain.facing,
+                chain.origin[0],
+                chain.origin[1],
+                chain.origin[2],
+                chain.length,
+                chain.clock,
+                chain.pack_mode,
+                min[0],
+                min[1],
+                min[2],
+                max[0],
+                max[1],
+                max[2]
+            );
+            if let Some(first) = slice.first() {
+                out.push_str(&format!(
+                    "first_cb {} {} {} {}\n",
+                    first.x, first.y, first.z, first.command
+                ));
+            }
+            if let Some(last) = slice.last() {
+                out.push_str(&format!(
+                    "last_cb {} {} {} {}\n",
+                    last.x, last.y, last.z, last.command
+                ));
+            }
+            return out;
+        }
+        cursor += len;
+    }
+    format!("chain `{chain_name}` not found\n")
 }
 
 fn kind_name(kind: SymbolKind) -> &'static str {
@@ -632,6 +1045,7 @@ fn kind_name(kind: SymbolKind) -> &'static str {
         SymbolKind::FakePlayer => "fake",
         SymbolKind::Function => "fn",
         SymbolKind::Chain => "chain",
+        SymbolKind::Label => "label",
     }
 }
 
