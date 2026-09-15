@@ -11,11 +11,13 @@ pub mod layout;
 pub mod lexer;
 pub mod lower;
 pub mod mincb;
+pub mod nbt;
 pub mod parser;
 pub mod place;
 pub mod project;
 pub mod sema;
 pub mod span;
+pub mod structure;
 pub mod token;
 
 pub use ast::CompilationUnit;
@@ -227,6 +229,35 @@ public class Match {
         let image = mincb::decode_image(&art.mincb).expect("decode");
         assert!(!image.command_blocks.is_empty());
         assert!(art.functions.keys().any(|p| p.contains("install")));
+        assert!(image.symbols.iter().any(|s| s.kind == 1), "tag symbols");
+        assert!(
+            image
+                .tags
+                .iter()
+                .any(|id| image.symbols.iter().any(|s| s.id == *id && s.kind == 1))
+                || image.symbols.iter().any(|s| s.kind == 1),
+            "TAGS section"
+        );
+        assert!(
+            art.inspect.contains("tick_values") || image.meta_json.contains("tick_values"),
+            "{}",
+            image.meta_json
+        );
+        for f in &image.functions {
+            assert!(
+                !f.path.is_empty() || image.symbols.iter().any(|s| s.id == f.symb),
+                "FUNC path recovered from SYMB"
+            );
+        }
+        assert!(!image.containers.is_empty());
+        assert!(
+            !image.containers[0].block.is_empty(),
+            "CONT block_id recovered"
+        );
+        assert!(
+            image.containers[0].slots.iter().any(|s| !s.item.is_empty()),
+            "CONT item_id recovered"
+        );
         let dump_bin = mincb::dump_commands_from_image(&image);
         assert!(
             dump_bin.contains("# chain") || dump_bin.contains("# function"),
@@ -406,6 +437,15 @@ public class A {
                     .join("functions/test/minc/place/install.mcfunction")
                     .is_file()
         );
+        assert!(
+            place_out.join("test_minc_place.mcstructure").is_file()
+                || std::fs::read_dir(&place_out).unwrap().any(|e| e
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    == Some("mcstructure"))
+        );
     }
 
     #[test]
@@ -438,5 +478,86 @@ public class A {
         ]);
         assert_eq!(code, 0);
         assert!(dir.join("dist/test-minc-new.mincb").is_file());
+    }
+
+    #[test]
+    fn illegal_constructs_have_real_spans() {
+        let null_src = "pack p;\npublic class A { public void m() { Player x = null; } }\n";
+        let unit = parse(null_src).expect("parse null");
+        let errors = sema::check(&unit);
+        let e = errors
+            .iter()
+            .find(|e| e.message.contains("null"))
+            .expect("null error");
+        assert!(e.span.end > e.span.start, "{e:?}");
+        assert!(null_src[e.span.clone()].contains("null"));
+
+        let new_src = "pack p;\npublic class A { public void m() { Player p = new Player(); } }\n";
+        let unit = parse(new_src).expect("parse new");
+        let errors = sema::check(&unit);
+        let e = errors
+            .iter()
+            .find(|e| e.message.contains("new"))
+            .expect("new error");
+        assert!(e.span.end > e.span.start, "{e:?}");
+
+        let arr = parse("pack p; public class A { int[] xs; }").expect_err("int[]");
+        assert!(arr
+            .iter()
+            .any(|e| e.span.end > e.span.start && e.message.contains("int[]")));
+
+        let tr = parse("pack p; public class A { public void m() { try { } } }").expect_err("try");
+        assert!(tr
+            .iter()
+            .any(|e| e.span.end > e.span.start && e.message.contains("try")));
+    }
+
+    #[test]
+    fn private_field_span_is_use_site() {
+        let src = r#"
+pack metro.escape;
+public class Runner {
+    private int keys;
+    public void ok() { this.keys += 1; }
+}
+public class Other {
+    public void bad(Runner r) { r.keys += 1; }
+}
+"#;
+        let unit = parse(src).expect("parse");
+        let errors = sema::check(&unit);
+        let e = errors
+            .iter()
+            .find(|e| e.message.contains("private field"))
+            .expect("private");
+        assert!(e.span.end > e.span.start);
+        assert!(src[e.span.clone()].contains("keys"));
+        assert!(!src[e.span.clone()].contains("private int keys"));
+    }
+
+    #[test]
+    fn score_add_uses_compiler_temps() {
+        let src = r#"
+pack demo;
+public class Match {
+    public static int a;
+    public static int b;
+    public static int c;
+}
+public chain C {
+    Match.a = Match.b + Match.c;
+}
+"#;
+        let unit = parse(src).unwrap();
+        let info = extract_binary_info(&unit);
+        let cfg = crate::config::MincConfig {
+            edition: crate::config::Edition::Bedrock,
+            pack: "demo".into(),
+            ..crate::config::MincConfig::default()
+        };
+        let dump =
+            crate::lower::dump_commands(&crate::lower::lower_project(&unit, &cfg, &info).unwrap());
+        assert!(dump.contains("#t0 mt"), "{dump}");
+        assert!(dump.contains("operation"), "{dump}");
     }
 }

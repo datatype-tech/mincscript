@@ -126,7 +126,13 @@ pub fn place_commands(
     let coords = match layout {
         "linear" => linear(origin, facing, n),
         "stack" => stack(origin, facing, n),
-        "snake" => snake(origin, facing, max_span.max(1), n),
+        "snake" => {
+            let coords = snake(origin, facing, max_span.max(1), n);
+            if let Some(b) = bound {
+                ensure_within_bound(origin, b, &coords, "snake")?;
+            }
+            coords
+        }
         "box" => box_fill(
             origin,
             facing,
@@ -189,6 +195,77 @@ pub fn place_commands(
         });
     }
     Ok(out)
+}
+
+fn ensure_within_bound(
+    origin: [i32; 3],
+    bound: [i32; 3],
+    coords: &[[i32; 3]],
+    layout: &str,
+) -> Result<(), String> {
+    let sx = bound[0].max(1);
+    let sy = bound[1].max(1);
+    let sz = bound[2].max(1);
+    let cap = (sx * sy * sz) as usize;
+    if coords.len() > cap {
+        return Err(format!(
+            "{layout} exceeds bound {sx}x{sy}x{sz} (holds {cap}, need {})",
+            coords.len()
+        ));
+    }
+    for [x, y, z] in coords {
+        if *x < origin[0]
+            || *x >= origin[0] + sx
+            || *y < origin[1]
+            || *y >= origin[1] + sy
+            || *z < origin[2]
+            || *z >= origin[2] + sz
+        {
+            return Err(format!(
+                "{layout} placement ({x},{y},{z}) exceeds bound {sx}x{sy}x{sz} at origin {origin:?}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Split `execute … run CMD` into a test CB plus a Conditional body CB.
+pub fn apply_prefer(
+    prefer: &str,
+    cmds: Vec<(String, ChainCmdMeta)>,
+) -> Vec<(String, ChainCmdMeta)> {
+    if prefer != "cb_conditional" {
+        return cmds;
+    }
+    let mut out = Vec::new();
+    for (cmd, meta) in cmds {
+        if let Some((test, run)) = split_execute_run(&cmd) {
+            let mut head = meta.clone();
+            head.conditional = false;
+            out.push((test, head));
+            let mut body = meta;
+            body.conditional = true;
+            body.delay = 0;
+            out.push((run, body));
+        } else {
+            out.push((cmd, meta));
+        }
+    }
+    out
+}
+
+fn split_execute_run(cmd: &str) -> Option<(String, String)> {
+    let cmd = cmd.trim();
+    if !cmd.starts_with("execute ") {
+        return None;
+    }
+    let idx = cmd.rfind(" run ")?;
+    let test = cmd[..idx].trim().to_string();
+    let run = cmd[idx + 5..].trim().to_string();
+    if test.is_empty() || run.is_empty() {
+        return None;
+    }
+    Some((test, run))
 }
 
 fn step_facing(layout: &str, facing: Facing, i: usize, max_span: u32) -> Facing {
@@ -324,5 +401,35 @@ mod tests {
             place_commands([0, 70, 0], "linear", Facing::East, 32, None, &cmds, false).unwrap();
         assert_eq!(placed[2].x, 2);
         assert_eq!(placed[0].facing, Facing::East);
+    }
+
+    #[test]
+    fn snake_exceeds_bound() {
+        let cmds: Vec<(String, ChainCmdMeta)> = (0..8)
+            .map(|i| (format!("say {i}"), ChainCmdMeta::default()))
+            .collect();
+        assert!(place_commands(
+            [0, 64, 0],
+            "snake",
+            Facing::East,
+            4,
+            Some([2, 1, 1]),
+            &cmds,
+            false
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn prefer_splits_execute_run() {
+        let cmds = vec![(
+            "execute if score mcs m00 matches 1 run say hi".into(),
+            ChainCmdMeta::default(),
+        )];
+        let out = apply_prefer("cb_conditional", cmds);
+        assert_eq!(out.len(), 2);
+        assert!(out[0].0.starts_with("execute if score"));
+        assert_eq!(out[1].0, "say hi");
+        assert!(out[1].1.conditional);
     }
 }

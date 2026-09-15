@@ -37,6 +37,8 @@ pub enum SymbolKind {
     Function = 3,
     Chain = 4,
     Label = 5,
+    /// Interned block / item id used by CONT `u16` fields.
+    Intern = 6,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,6 +164,21 @@ pub fn extract_binary_info_with_revision(
         id: "mi".into(),
         kind: SymbolKind::Objective,
         qualified: format!("{pack}.#inited"),
+    });
+    symbols.push(Symbol {
+        id: "mt".into(),
+        kind: SymbolKind::Objective,
+        qualified: format!("{pack}.#mt"),
+    });
+    symbols.push(Symbol {
+        id: "#t0".into(),
+        kind: SymbolKind::FakePlayer,
+        qualified: format!("{pack}.#t0"),
+    });
+    symbols.push(Symbol {
+        id: "#t1".into(),
+        kind: SymbolKind::FakePlayer,
+        qualified: format!("{pack}.#t1"),
     });
     for (qualified, kind) in field_names {
         let id = match kind {
@@ -462,6 +479,7 @@ impl BinaryInfo {
                 SymbolKind::Function => "fn",
                 SymbolKind::Chain => "chain",
                 SymbolKind::Label => "label",
+                SymbolKind::Intern => "id",
             };
             out.push_str(&format!("  {kind} {} {}\n", sym.id, sym.qualified));
         }

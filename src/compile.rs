@@ -8,7 +8,7 @@ use crate::config::MincConfig;
 use crate::diagnostic::Diagnostic;
 use crate::extract::{extract_binary_info_with_revision, BinaryInfo};
 use crate::isa;
-use crate::layout::{place_commands, CbInstance};
+use crate::layout::{apply_prefer, place_commands, CbInstance};
 use crate::lower::{self, Lowered};
 use crate::mincb::{self, CblkRec, FuncRec, SymbRec};
 use crate::place;
@@ -55,7 +55,7 @@ pub fn merge_units(files: &[ParsedFile]) -> Result<CompilationUnit, Vec<Diagnost
                 .count();
             if worlds != 1 {
                 return Err(vec![Diagnostic::new(
-                    0..0,
+                    file.unit.pack_span.clone(),
                     format!(
                         "{}: controller must contain exactly one world",
                         file.path.display()
@@ -76,7 +76,7 @@ pub fn merge_units(files: &[ParsedFile]) -> Result<CompilationUnit, Vec<Diagnost
             let expect = stem.trim_end_matches(".chain");
             if chains.len() != 1 || chains[0] != expect {
                 return Err(vec![Diagnostic::new(
-                    0..0,
+                    file.unit.pack_span.clone(),
                     format!(
                         "{}: expected exactly one `chain {expect}`",
                         file.path.display()
@@ -85,7 +85,7 @@ pub fn merge_units(files: &[ParsedFile]) -> Result<CompilationUnit, Vec<Diagnost
             }
             if file.unit.items.iter().any(|i| matches!(i, Item::Class(_))) {
                 return Err(vec![Diagnostic::new(
-                    0..0,
+                    file.unit.pack_span.clone(),
                     format!(
                         "{}: chain files cannot declare classes",
                         file.path.display()
@@ -160,7 +160,7 @@ pub fn compile_unit(
                 .unwrap_or_default();
             vec![(format!("function {path}"), meta)]
         } else {
-            chain.commands.clone()
+            apply_prefer(&config.prefer, chain.commands.clone())
         };
         let placed = place_commands(
             origin,
@@ -171,7 +171,7 @@ pub fn compile_unit(
             &cmds_for_cb,
             clock,
         )
-        .map_err(|e| vec![Diagnostic::new(0..0, e)])?;
+        .map_err(|e| vec![Diagnostic::new(unit.pack_span.clone(), e)])?;
         if placed.len() > 100 {
             warnings.push(format!(
                 "chain `{}` length {} > 100 (hard to see in Creative)",
@@ -181,7 +181,7 @@ pub fn compile_unit(
         }
         if chain.commands.len() as u32 > config.function_command_limit {
             return Err(vec![Diagnostic::new(
-                0..0,
+                unit.pack_span.clone(),
                 format!(
                     "chain `{}` exceeds limits.function_command_limit",
                     chain.name
@@ -213,6 +213,7 @@ pub fn compile_unit(
     } else {
         Some(tick_json_body(config, &lowered.load_paths))
     };
+    let mut meta_ticks: Vec<String> = Vec::new();
 
     if config.emit_functions {
         match config.edition {
@@ -242,6 +243,7 @@ pub fn compile_unit(
                     }
                 }
                 functions.insert(boot.clone(), join_cmds(&tick_body));
+                meta_ticks.push(boot.clone());
                 tick_json = Some(tick_json_body(config, &[boot]));
                 load_json = Some(tick_json_body(
                     config,
@@ -258,6 +260,7 @@ pub fn compile_unit(
                         }
                     }
                 }
+                meta_ticks = values.clone();
                 if !values.is_empty() {
                     tick_json = Some(tick_json_body(config, &values));
                 }
@@ -344,6 +347,16 @@ pub fn compile_unit(
         })
         .collect();
     image.functions = func_recs;
+    image.tick_values = meta_ticks
+        .iter()
+        .filter_map(|p| {
+            image
+                .symbols
+                .iter()
+                .find(|s| s.short == *p || s.qualified.ends_with(p))
+                .map(|s| s.id)
+        })
+        .collect();
 
     let mut isa_errors = Vec::new();
     for body in functions.values() {
@@ -363,7 +376,7 @@ pub fn compile_unit(
     if !isa_errors.is_empty() {
         return Err(isa_errors
             .into_iter()
-            .map(|e| Diagnostic::new(0..0, e))
+            .map(|e| Diagnostic::new(unit.pack_span.clone(), e))
             .collect());
     }
 
@@ -601,6 +614,7 @@ pub fn write_artifacts(
             std::fs::write(file, body).map_err(|e| e.to_string())?;
         }
     }
+    crate::structure::write_structure_files(out_dir, &art.image)?;
     let _ = root;
     Ok(())
 }

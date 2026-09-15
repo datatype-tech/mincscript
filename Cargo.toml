@@ -20,5 +20,6 @@ path = "src/main.rs"
 ariadne = "0.5.1"
 # `spill-stack` pulls in `psm` versions that need a newer rustc than this environment.
 chumsky = { version = "0.9.3", default-features = false, features = ["std"] }
+flate2 = { version = "1.0.35", default-features = false, features = ["rust_backend"] }
 logos = "0.16.1"
 thiserror = "2.0.20"

@@ -3,6 +3,7 @@
 //! Bedrock and Java each get their own execute/selector printer. They do not
 //! share an execute walker (`docs/minecraft-commands/crosswalk/parser-implementation.md`).
 
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use crate::ast::{
@@ -59,6 +60,7 @@ struct Lower<'a> {
     this_sel: String,
     bindings: HashMap<String, String>,
     errors: Vec<Diagnostic>,
+    temp: Cell<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -178,6 +180,7 @@ impl<'a> Lower<'a> {
             this_sel: "@s".into(),
             bindings: HashMap::new(),
             errors: Vec::new(),
+            temp: Cell::new(0),
         }
     }
 
@@ -197,6 +200,8 @@ impl<'a> Lower<'a> {
             "scoreboard players add {} mt 0",
             self.config.edition.world_holder()
         ));
+        setup.push("scoreboard players add #t0 mt 0".into());
+        setup.push("scoreboard players add #t1 mt 0".into());
         for f in self.fields.values() {
             if f.is_static && f.kind == SymbolKind::Objective {
                 setup.push(format!(
@@ -224,6 +229,7 @@ impl<'a> Lower<'a> {
                         self.current_class = class.name.clone();
                         self.this_sel = "@s".into();
                         self.bindings.clear();
+                        self.temp.set(0);
                         for p in &method.params {
                             if matches!(named(&p.ty).as_str(), "Player" | "Entity" | "Runner")
                                 || self.classes.contains_key(&named(&p.ty))
@@ -234,7 +240,7 @@ impl<'a> Lower<'a> {
                         let mut cmds = self.lower_block(&method.body);
                         if cmds.len() as u32 > self.config.function_command_limit {
                             self.errors.push(Diagnostic::new(
-                                0..0,
+                                method.span.clone(),
                                 format!(
                                     "function {}.{} exceeds limits.function_command_limit",
                                     class.name, method.name
@@ -280,6 +286,7 @@ impl<'a> Lower<'a> {
                 self.current_class.clear();
                 self.this_sel = "@s".into();
                 self.bindings.clear();
+                self.temp.set(0);
                 let commands = self.lower_chain(chain);
                 chains.push(LoweredChain {
                     name: chain.name.clone(),
@@ -572,6 +579,16 @@ impl<'a> Lower<'a> {
                             field.short
                         )];
                     }
+                    if is_score_arith(value) {
+                        if let Some((mut cmds, h, o)) = self.materialize_score(value) {
+                            let mop = assign_mop(op);
+                            cmds.push(format!(
+                                "scoreboard players operation {holder} {} {mop} {h} {o}",
+                                field.short
+                            ));
+                            return cmds;
+                        }
+                    }
                     return self.op_assign(&holder, &field.short, op, value);
                 }
                 _ => {}
@@ -623,11 +640,48 @@ impl<'a> Lower<'a> {
         out
     }
 
+    fn temp_holder(&self) -> String {
+        let n = self.temp.get();
+        self.temp.set(n + 1);
+        format!("#t{n}")
+    }
+
+    fn materialize_score(&self, expr: &Expr) -> Option<(Vec<String>, String, String)> {
+        if let Some((holder, field)) = self.lvalue(expr) {
+            if field.kind == SymbolKind::Objective {
+                return Some((Vec::new(), holder, field.short));
+            }
+        }
+        if let Some(n) = eval_int(expr, &self.enums) {
+            let t = self.temp_holder();
+            return Some((
+                vec![format!("scoreboard players set {t} mt {n}")],
+                t,
+                "mt".into(),
+            ));
+        }
+        match &expr.kind {
+            ExprKind::Binary { op, lhs, rhs } if is_arith(*op) => {
+                let (mut cmds, h1, o1) = self.materialize_score(lhs)?;
+                let (c2, h2, o2) = self.materialize_score(rhs)?;
+                cmds.extend(c2);
+                let t = self.temp_holder();
+                let mop = bin_mop(*op)?;
+                cmds.push(format!("scoreboard players operation {t} mt = {h1} {o1}"));
+                cmds.push(format!(
+                    "scoreboard players operation {t} mt {mop} {h2} {o2}"
+                ));
+                Some((cmds, t, "mt".into()))
+            }
+            _ => None,
+        }
+    }
+
     fn lower_expr_stmt(&mut self, expr: &Expr) -> Vec<String> {
         match &expr.kind {
             ExprKind::Call { callee, args } => {
                 if let ExprKind::Ident(name) = &callee.kind {
-                    return self.lower_builtin_call(name, args);
+                    return self.lower_builtin_call(name, args, expr.span.clone());
                 }
                 if let ExprKind::Field { base, name } = &callee.kind {
                     if name == "of" {
@@ -758,7 +812,12 @@ impl<'a> Lower<'a> {
         }
     }
 
-    fn lower_builtin_call(&mut self, name: &str, args: &[Expr]) -> Vec<String> {
+    fn lower_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        span: crate::span::Span,
+    ) -> Vec<String> {
         match name {
             "cmd" => {
                 let mut s = string_lit(&args[0]).unwrap_or_default();
@@ -821,7 +880,7 @@ impl<'a> Lower<'a> {
             "random" => {
                 if self.config.edition == Edition::Java {
                     self.errors
-                        .push(Diagnostic::new(0..0, "`random` is Bedrock-only"));
+                        .push(Diagnostic::new(span, "`random` is Bedrock-only"));
                     return Vec::new();
                 }
                 let lo = args
@@ -1397,7 +1456,13 @@ fn merge_as_at(cmds: &[String]) -> Vec<String> {
 }
 
 fn is_bare_return(body: &[Stmt]) -> bool {
-    matches!(body, [Stmt { kind: StmtKind::Return(None), .. }])
+    matches!(
+        body,
+        [Stmt {
+            kind: StmtKind::Return(None),
+            ..
+        }]
+    )
 }
 
 fn is_cmp(op: BinOp) -> bool {
@@ -1405,6 +1470,39 @@ fn is_cmp(op: BinOp) -> bool {
         op,
         BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge | BinOp::In
     )
+}
+
+fn is_arith(op: BinOp) -> bool {
+    matches!(
+        op,
+        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem
+    )
+}
+
+fn is_score_arith(expr: &Expr) -> bool {
+    matches!(&expr.kind, ExprKind::Binary { op, .. } if is_arith(*op))
+}
+
+fn bin_mop(op: BinOp) -> Option<&'static str> {
+    Some(match op {
+        BinOp::Add => "+=",
+        BinOp::Sub => "-=",
+        BinOp::Mul => "*=",
+        BinOp::Div => "/=",
+        BinOp::Rem => "%=",
+        _ => return None,
+    })
+}
+
+fn assign_mop(op: AssignOp) -> &'static str {
+    match op {
+        AssignOp::Eq => "=",
+        AssignOp::PlusEq => "+=",
+        AssignOp::MinusEq => "-=",
+        AssignOp::StarEq => "*=",
+        AssignOp::SlashEq => "/=",
+        AssignOp::PercentEq => "%=",
+    }
 }
 
 fn named(ty: &TypeRef) -> String {

@@ -98,6 +98,14 @@ impl Default for MincConfig {
 
 impl MincConfig {
     pub fn validate(&self) -> Result<(), String> {
+        if self.edition == Edition::Java
+            && (self.game_version == "26.3-rc-3" || self.game_version == "26.2")
+        {
+            if self.pack.is_empty() {
+                return Err("project.pack is required".into());
+            }
+            return Ok(());
+        }
         let (maj, min, pat) = parse_game_version(&self.game_version)?;
         match self.edition {
             Edition::Bedrock => {
@@ -107,11 +115,25 @@ impl MincConfig {
                         self.game_version
                     ));
                 }
+                let known = maj == 1 && ((min == 19 && pat >= 50) || min == 20 || min == 21);
+                if !known {
+                    return Err(format!(
+                        "unknown Bedrock game_version `{}` (no command ISA snapshot; do not guess)",
+                        self.game_version
+                    ));
+                }
             }
             Edition::Java => {
                 if (maj, min, pat) < (1, 13, 0) {
                     return Err(format!(
                         "Java {} is below 1.13 (brigadier /execute is required)",
+                        self.game_version
+                    ));
+                }
+                let known = (maj == 1 && (13..=21).contains(&min)) || (maj == 26 && min <= 3);
+                if !known {
+                    return Err(format!(
+                        "unknown Java game_version `{}` (no command ISA snapshot; do not guess)",
                         self.game_version
                     ));
                 }
@@ -386,5 +408,16 @@ edition = "bedrock"
 game_version = "1.18.0"
 "#;
         assert!(parse_minc_toml(text).is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_game_version() {
+        let text = r#"
+[target]
+edition = "bedrock"
+game_version = "1.99.0"
+"#;
+        let err = parse_minc_toml(text).expect_err("unknown");
+        assert!(err.contains("unknown"), "{err}");
     }
 }

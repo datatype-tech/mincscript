@@ -168,8 +168,8 @@ impl Parser {
             let start = self.peek_span();
             self.pos += 1;
             pack = self.parse_path();
-            pack_span = start.start..self.peek_span().start;
             self.expect(Token::Semicolon, "`;` after pack");
+            pack_span = start.start..self.prev_end();
         } else {
             self.error("expected `pack` at start of file");
         }
@@ -220,10 +220,14 @@ impl Parser {
                     | Token::Catch
             )
         ) {
-            self.error(format!(
-                "`{}` is not valid in MincScript v1",
-                self.peek().unwrap()
-            ));
+            let name = match self.peek() {
+                Some(Token::Interface) => "interface",
+                Some(Token::Abstract) => "abstract",
+                Some(Token::Synchronized) => "synchronized",
+                Some(Token::Try) | Some(Token::Catch) => "try/catch",
+                _ => "this construct",
+            };
+            self.error(format!("`{name}` is not valid in MincScript v1"));
             return None;
         }
         if self.peek() == Some(&Token::Enum) {

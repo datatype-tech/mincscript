@@ -10,6 +10,7 @@ const FORMAT_MINOR: u16 = 0;
 
 const SID_SYMB: u32 = u32::from_le_bytes(*b"SYMB");
 const SID_OBJT: u32 = u32::from_le_bytes(*b"OBJT");
+const SID_TAGS: u32 = u32::from_le_bytes(*b"TAGS");
 const SID_FUNC: u32 = u32::from_le_bytes(*b"FUNC");
 const SID_CHAIN: u32 = u32::from_le_bytes(*b"CHAI");
 const SID_CBLK: u32 = u32::from_le_bytes(*b"CBLK");
@@ -34,6 +35,8 @@ pub struct MincbImage {
     pub world_blocks: Vec<WblkRec>,
     pub containers: Vec<ContRec>,
     pub links: Vec<LinkRec>,
+    pub tags: Vec<u16>,
+    pub tick_values: Vec<u16>,
     pub meta_json: String,
 }
 
@@ -180,7 +183,7 @@ pub fn image_from_extract(info: &BinaryInfo, edition: Edition, game_version: &st
             block: b.block.clone(),
         })
         .collect();
-    let containers = info
+    let containers: Vec<ContRec> = info
         .containers
         .iter()
         .map(|c| ContRec {
@@ -201,6 +204,12 @@ pub fn image_from_extract(info: &BinaryInfo, edition: Edition, game_version: &st
                 })
                 .collect(),
         })
+        .collect();
+    intern_container_ids(&mut symbols, &containers);
+    let tags: Vec<u16> = symbols
+        .iter()
+        .filter(|s| s.kind == 1)
+        .map(|s| s.id)
         .collect();
     let links = info
         .links
@@ -231,8 +240,100 @@ pub fn image_from_extract(info: &BinaryInfo, edition: Edition, game_version: &st
         world_blocks,
         containers,
         links,
+        tags,
+        tick_values: Vec::new(),
         meta_json: meta,
     }
+}
+
+fn intern_container_ids(symbols: &mut Vec<SymbRec>, containers: &[ContRec]) {
+    for c in containers {
+        intern_name(symbols, &c.block);
+        for s in &c.slots {
+            intern_name(symbols, &s.item);
+        }
+    }
+}
+
+/// Intern a block/item name as SYMB kind 6 and return its id.
+pub fn intern_string(image: &mut MincbImage, name: &str) -> u16 {
+    intern_name(&mut image.symbols, name)
+}
+
+fn intern_name(symbols: &mut Vec<SymbRec>, name: &str) -> u16 {
+    if name.is_empty() {
+        return 0;
+    }
+    if let Some(s) = symbols
+        .iter()
+        .find(|s| s.kind == 6 && (s.short == name || s.qualified == name))
+    {
+        return s.id;
+    }
+    let next = symbols.iter().map(|s| s.id).max().unwrap_or(0) + 1;
+    let qualified = if name.contains(':') {
+        name.to_string()
+    } else {
+        format!("minecraft:{name}")
+    };
+    symbols.push(SymbRec {
+        id: next,
+        kind: 6,
+        short: name.to_string(),
+        qualified,
+    });
+    next
+}
+
+fn lookup_intern(symbols: &[SymbRec], name: &str) -> u16 {
+    symbols
+        .iter()
+        .find(|s| {
+            s.kind == 6 && (s.short == name || s.qualified == name || s.qualified.ends_with(name))
+        })
+        .map(|s| s.id)
+        .unwrap_or(0)
+}
+
+fn intern_name_of(symbols: &[SymbRec], id: u16) -> String {
+    symbols
+        .iter()
+        .find(|s| s.id == id)
+        .map(|s| s.short.clone())
+        .unwrap_or_default()
+}
+
+fn inject_tick_values(meta: &str, ids: &[u16]) -> String {
+    let ticks = ids
+        .iter()
+        .map(|i| i.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    if let Some(idx) = meta.find("\"tick_values\"") {
+        let rest = &meta[idx..];
+        if let Some(br) = rest.find('[') {
+            if let Some(end) = rest[br..].find(']') {
+                let start = idx + br;
+                let stop = idx + br + end + 1;
+                let mut out = String::new();
+                out.push_str(&meta[..start]);
+                out.push('[');
+                out.push_str(&ticks);
+                out.push(']');
+                out.push_str(&meta[stop..]);
+                return out;
+            }
+        }
+    }
+    if meta.ends_with('}') {
+        let mut out = meta.trim_end_matches('}').to_string();
+        if !out.ends_with('{') && !out.ends_with(',') {
+            out.push(',');
+        }
+        out.push_str(&format!("\"tick_values\":[{ticks}]}}"));
+        return out;
+    }
+    meta.to_string()
 }
 
 fn nbt_from_slot(title: Option<&str>, pages: Option<&str>) -> String {
@@ -288,13 +389,14 @@ fn serde_meta(
     }
     fills.push(']');
     format!(
-        "{{\"edition\":\"{}\",\"game_version\":\"{}\",\"host_tick\":\"{}\",\"dimension\":\"{}\",\"ticking_areas\":{},\"fills\":{}}}",
+        "{{\"edition\":\"{}\",\"game_version\":\"{}\",\"host_tick\":\"{}\",\"dimension\":\"{}\",\"ticking_areas\":{},\"fills\":{},\"tick_values\":[{}]}}",
         edition.as_str(),
         game_version,
         host.unwrap_or(""),
         info.dimension.as_deref().unwrap_or("overworld"),
         areas,
-        fills
+        fills,
+        ""
     )
 }
 
@@ -367,10 +469,25 @@ pub fn encode_image(image: &MincbImage) -> Vec<u8> {
     }
     sections.push((SID_OBJT, image.objectives.len() as u32, objt));
 
+    let tags: Vec<u16> = if image.tags.is_empty() {
+        image
+            .symbols
+            .iter()
+            .filter(|s| s.kind == 1)
+            .map(|s| s.id)
+            .collect()
+    } else {
+        image.tags.clone()
+    };
+    let mut tags_body = Vec::new();
+    for id in &tags {
+        write_u16(&mut tags_body, *id);
+    }
+    sections.push((SID_TAGS, tags.len() as u32, tags_body));
+
     let mut func = Vec::new();
     for f in &image.functions {
         write_u16(&mut func, f.symb);
-        write_str16(&mut func, &f.path);
         write_u32(&mut func, f.body.len() as u32);
         func.extend_from_slice(f.body.as_bytes());
     }
@@ -427,12 +544,12 @@ pub fn encode_image(image: &MincbImage) -> Vec<u8> {
         write_i32(&mut cont, c.x);
         write_i32(&mut cont, c.y);
         write_i32(&mut cont, c.z);
-        write_str16(&mut cont, &c.block);
+        write_u16(&mut cont, lookup_intern(&image.symbols, &c.block));
         cont.push(c.facing);
         write_u16(&mut cont, c.slots.len() as u16);
         for s in &c.slots {
             cont.push(s.slot);
-            write_str16(&mut cont, &s.item);
+            write_u16(&mut cont, lookup_intern(&image.symbols, &s.item));
             write_u16(&mut cont, s.count);
             write_i32(&mut cont, s.data);
             write_u32(&mut cont, s.nbt.len() as u32);
@@ -450,9 +567,10 @@ pub fn encode_image(image: &MincbImage) -> Vec<u8> {
     }
     sections.push((SID_LINK, image.links.len() as u32, link));
 
+    let meta_json = inject_tick_values(&image.meta_json, &image.tick_values);
     let mut meta = Vec::new();
-    write_u32(&mut meta, image.meta_json.len() as u32);
-    meta.extend_from_slice(image.meta_json.as_bytes());
+    write_u32(&mut meta, meta_json.len() as u32);
+    meta.extend_from_slice(meta_json.as_bytes());
     sections.push((SID_META, 1, meta));
 
     let mut flags = 0u8;
@@ -613,6 +731,7 @@ pub fn inspect_text(bytes: &[u8], info: Option<&BinaryInfo>, blocks: &[CbInstanc
                 3 => "fn",
                 4 => "chain",
                 5 => "label",
+                6 => "id",
                 _ => "?",
             };
             out.push_str(&format!("  {kn} {} {} (#{})\n", s.short, s.qualified, s.id));
@@ -704,6 +823,7 @@ pub fn decode_image(bytes: &[u8]) -> Option<MincbImage> {
     let mut world_blocks = Vec::new();
     let mut containers = Vec::new();
     let mut links = Vec::new();
+    let mut tags = Vec::new();
     let mut meta_json = String::new();
 
     for i in 0..count {
@@ -751,13 +871,18 @@ pub fn decode_image(bytes: &[u8]) -> Option<MincbImage> {
                     display,
                 });
             }
+        } else if id == SID_TAGS {
+            let mut p = 0usize;
+            for _ in 0..n {
+                let id = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
+                p += 2;
+                tags.push(id);
+            }
         } else if id == SID_FUNC {
             let mut p = 0usize;
             for _ in 0..n {
                 let symb = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
                 p += 2;
-                let (path, used) = read_str16(body.get(p..)?)?;
-                p += used;
                 let blen = u32::from_le_bytes(body.get(p..p + 4)?.try_into().ok()?) as usize;
                 p += 4;
                 let body_s = std::str::from_utf8(body.get(p..p + blen)?)
@@ -766,7 +891,7 @@ pub fn decode_image(bytes: &[u8]) -> Option<MincbImage> {
                 p += blen;
                 functions.push(FuncRec {
                     symb,
-                    path,
+                    path: String::new(),
                     body: body_s,
                 });
             }
@@ -859,8 +984,8 @@ pub fn decode_image(bytes: &[u8]) -> Option<MincbImage> {
                 let y = i32::from_le_bytes(body.get(p + 4..p + 8)?.try_into().ok()?);
                 let z = i32::from_le_bytes(body.get(p + 8..p + 12)?.try_into().ok()?);
                 p += 12;
-                let (block, used) = read_str16(body.get(p..)?)?;
-                p += used;
+                let block_id = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
+                p += 2;
                 let facing = *body.get(p)?;
                 p += 1;
                 let slot_n = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
@@ -869,8 +994,8 @@ pub fn decode_image(bytes: &[u8]) -> Option<MincbImage> {
                 for _ in 0..slot_n {
                     let slot = *body.get(p)?;
                     p += 1;
-                    let (item, used) = read_str16(body.get(p..)?)?;
-                    p += used;
+                    let item_id = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
+                    p += 2;
                     let count = u16::from_le_bytes(body.get(p..p + 2)?.try_into().ok()?);
                     p += 2;
                     let data = i32::from_le_bytes(body.get(p..p + 4)?.try_into().ok()?);
@@ -883,7 +1008,7 @@ pub fn decode_image(bytes: &[u8]) -> Option<MincbImage> {
                     p += nlen;
                     slots.push(ContSlot {
                         slot,
-                        item,
+                        item: intern_name_of(&symbols, item_id),
                         count,
                         data,
                         nbt,
@@ -893,7 +1018,7 @@ pub fn decode_image(bytes: &[u8]) -> Option<MincbImage> {
                     x,
                     y,
                     z,
-                    block,
+                    block: intern_name_of(&symbols, block_id),
                     facing,
                     slots,
                 });
@@ -919,6 +1044,24 @@ pub fn decode_image(bytes: &[u8]) -> Option<MincbImage> {
         }
     }
 
+    for f in &mut functions {
+        if f.path.is_empty() {
+            f.path = symbols
+                .iter()
+                .find(|s| s.id == f.symb)
+                .map(|s| s.short.clone())
+                .unwrap_or_default();
+        }
+    }
+    if tags.is_empty() {
+        tags = symbols
+            .iter()
+            .filter(|s| s.kind == 1)
+            .map(|s| s.id)
+            .collect();
+    }
+    let tick_values = parse_tick_values(&meta_json);
+
     Some(MincbImage {
         edition,
         game_version: h.game_version,
@@ -933,6 +1076,8 @@ pub fn decode_image(bytes: &[u8]) -> Option<MincbImage> {
         world_blocks,
         containers,
         links,
+        tags,
+        tick_values,
         meta_json,
     })
 }
@@ -956,7 +1101,7 @@ pub fn symb_name(image: &MincbImage, id: u16) -> String {
 pub fn dump_commands_from_image(image: &MincbImage) -> String {
     let mut out = String::new();
     for f in &image.functions {
-        out.push_str(&format!("# function {}\n", f.path));
+        out.push_str(&format!("# function {}\n", func_path(image, f)));
         out.push_str(&f.body);
         if !f.body.ends_with('\n') {
             out.push('\n');
@@ -1046,7 +1191,36 @@ fn kind_name(kind: SymbolKind) -> &'static str {
         SymbolKind::Function => "fn",
         SymbolKind::Chain => "chain",
         SymbolKind::Label => "label",
+        SymbolKind::Intern => "id",
     }
+}
+
+fn parse_tick_values(meta: &str) -> Vec<u16> {
+    let Some(idx) = meta.find("\"tick_values\"") else {
+        return Vec::new();
+    };
+    let rest = &meta[idx..];
+    let Some(br) = rest.find('[') else {
+        return Vec::new();
+    };
+    let rest = &rest[br + 1..];
+    let end = rest.find(']').unwrap_or(rest.len());
+    rest[..end]
+        .split(',')
+        .filter_map(|s| s.trim().parse().ok())
+        .collect()
+}
+
+pub fn func_path(image: &MincbImage, f: &FuncRec) -> String {
+    if !f.path.is_empty() {
+        return f.path.clone();
+    }
+    image
+        .symbols
+        .iter()
+        .find(|s| s.id == f.symb)
+        .map(|s| s.short.clone())
+        .unwrap_or_default()
 }
 
 fn intern(palette: &mut Vec<String>, name: &str) -> u16 {

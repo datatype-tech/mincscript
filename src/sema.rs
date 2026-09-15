@@ -5,6 +5,7 @@ use crate::ast::{
 };
 use crate::config::{Edition, MincConfig};
 use crate::diagnostic::Diagnostic;
+use crate::span::Span;
 
 #[derive(Clone)]
 struct FieldInfo {
@@ -27,6 +28,7 @@ struct MethodInfo {
     #[allow(dead_code)]
     is_static: bool,
     annotations: Vec<String>,
+    span: Span,
 }
 
 /// Type-check a compilation unit (single file or merged project).
@@ -60,6 +62,7 @@ pub fn check_with_config(unit: &CompilationUnit, config: Option<&MincConfig>) ->
                             arity: m.params.len(),
                             is_static: m.is_static,
                             annotations: m.annotations.iter().map(|a| a.name.clone()).collect(),
+                            span: m.span.clone(),
                         }),
                     }
                 }
@@ -74,7 +77,7 @@ pub fn check_with_config(unit: &CompilationUnit, config: Option<&MincConfig>) ->
         for b in methods.iter().skip(i + 1) {
             if a.class == b.class && a.name == b.name && a.arity == b.arity {
                 errors.push(Diagnostic::new(
-                    0..0,
+                    a.span.clone(),
                     format!(
                         "duplicate method `{}.{}` with arity {}",
                         a.class, a.name, a.arity
@@ -102,7 +105,7 @@ pub fn check_with_config(unit: &CompilationUnit, config: Option<&MincConfig>) ->
             > 1
         {
             errors.push(Diagnostic::new(
-                0..0,
+                unit.pack_span.clone(),
                 "project must contain exactly one world controller",
             ));
         }
@@ -118,7 +121,7 @@ pub fn check_with_config(unit: &CompilationUnit, config: Option<&MincConfig>) ->
         let ticking_n: usize = ticking.sum();
         if cfg.edition == Edition::Bedrock && ticking_n > 10 {
             errors.push(Diagnostic::new(
-                0..0,
+                unit.pack_span.clone(),
                 "Bedrock ticking areas would exceed 10",
             ));
         }
@@ -388,6 +391,14 @@ fn check_stmts(
                     java_only,
                     bedrock_only,
                 );
+                if type_of(current_class, expr, fields, methods, classes, enums, locals).as_deref()
+                    == Some("String")
+                {
+                    errors.push(Diagnostic::new(
+                        expr.span.clone(),
+                        "`switch` on `String` is not valid (strings are compile-time; switch on enum/int)",
+                    ));
+                }
                 for (_, body) in arms {
                     check_stmts(
                         current_class,
@@ -465,7 +476,14 @@ fn check_stmts(
                     if let Some(owner) =
                         type_of(current_class, base, fields, methods, classes, enums, locals)
                     {
-                        deny_private_field(current_class, &owner, name, fields, errors);
+                        deny_private_field(
+                            current_class,
+                            &owner,
+                            name,
+                            fields,
+                            errors,
+                            target.span.clone(),
+                        );
                     }
                 }
             }
@@ -535,7 +553,7 @@ fn check_expr(
                 && !(is_string_const(lhs) && is_string_const(rhs))
             {
                 errors.push(Diagnostic::new(
-                    0..0,
+                    expr.span.clone(),
                     "String concatenation is compile-time only",
                 ));
             }
@@ -574,7 +592,7 @@ fn check_expr(
                     if let Some(cfg) = config {
                         if cfg.edition == Edition::Java {
                             errors.push(Diagnostic::new(
-                                0..0,
+                                expr.span.clone(),
                                 "`random(min, max)` is Bedrock-only (`scoreboard players random`)",
                             ));
                         }
@@ -582,7 +600,7 @@ fn check_expr(
                 }
                 if name == "cmd" && config.map(|c| c.strict_raw).unwrap_or(false) {
                     errors.push(Diagnostic::new(
-                        0..0,
+                        expr.span.clone(),
                         "`cmd` is forbidden under --strict-raw",
                     ));
                 }
@@ -592,7 +610,7 @@ fn check_expr(
                     if let Some(cfg) = config {
                         if cfg.edition == Edition::Java {
                             errors.push(Diagnostic::new(
-                                0..0,
+                                expr.span.clone(),
                                 "`.data(...)` is Bedrock aux-value syntax; invalid on Java",
                             ));
                         }
@@ -604,12 +622,29 @@ fn check_expr(
                     type_of(current_class, base, fields, methods, classes, enums, locals)
                 };
                 if let Some(owner) = owner {
-                    deny_private_method(current_class, &owner, name, methods, errors);
-                    if let Some(m) = methods.iter().find(|m| m.class == owner && m.name == *name) {
+                    deny_private_method(
+                        current_class,
+                        &owner,
+                        name,
+                        methods,
+                        errors,
+                        expr.span.clone(),
+                    );
+                    let overloads: Vec<_> = methods
+                        .iter()
+                        .filter(|m| m.class == owner && m.name == *name)
+                        .collect();
+                    if !overloads.is_empty() && !overloads.iter().any(|m| m.arity == args.len()) {
+                        errors.push(Diagnostic::new(
+                            expr.span.clone(),
+                            format!("no overload of `{owner}.{name}` with arity {}", args.len()),
+                        ));
+                    }
+                    if let Some(m) = overloads.iter().find(|m| m.arity == args.len()) {
                         if m.annotations.iter().any(|a| a == "JavaOnly") {
                             if !java_only {
                                 errors.push(Diagnostic::new(
-                                    0..0,
+                                    expr.span.clone(),
                                     format!(
                                         "`{}.{name}` is @JavaOnly and must not be called from shared code",
                                         m.class
@@ -619,7 +654,7 @@ fn check_expr(
                             if let Some(cfg) = config {
                                 if cfg.edition == Edition::Bedrock {
                                     errors.push(Diagnostic::new(
-                                        0..0,
+                                        expr.span.clone(),
                                         format!(
                                             "`{}.{name}` is @JavaOnly (target edition is bedrock)",
                                             m.class
@@ -631,7 +666,7 @@ fn check_expr(
                         if m.annotations.iter().any(|a| a == "BedrockOnly") {
                             if !bedrock_only {
                                 errors.push(Diagnostic::new(
-                                    0..0,
+                                    expr.span.clone(),
                                     format!(
                                         "`{}.{name}` is @BedrockOnly and must not be called from shared code",
                                         m.class
@@ -641,7 +676,7 @@ fn check_expr(
                             if let Some(cfg) = config {
                                 if cfg.edition == Edition::Java {
                                     errors.push(Diagnostic::new(
-                                        0..0,
+                                        expr.span.clone(),
                                         format!(
                                             "`{}.{name}` is @BedrockOnly (target edition is java)",
                                             m.class
@@ -671,10 +706,23 @@ fn check_expr(
             if let Some(owner) =
                 type_of(current_class, base, fields, methods, classes, enums, locals)
             {
-                deny_private_field(current_class, &owner, name, fields, errors);
+                deny_private_field(
+                    current_class,
+                    &owner,
+                    name,
+                    fields,
+                    errors,
+                    expr.span.clone(),
+                );
             }
         }
-        ExprKind::New { args, .. } => {
+        ExprKind::Null => {
+            errors.push(Diagnostic::new(
+                expr.span.clone(),
+                "`null` is not valid; missing selectors use `exists() == false`",
+            ));
+        }
+        ExprKind::New { ty, args } => {
             for arg in args {
                 check_expr(
                     current_class,
@@ -689,6 +737,22 @@ fn check_expr(
                     java_only,
                     bedrock_only,
                 );
+            }
+            let name = named_type(ty).unwrap_or_default();
+            if matches!(name.as_str(), "Player" | "Entity") || classes.iter().any(|c| c == &name) {
+                errors.push(Diagnostic::new(
+                    expr.span.clone(),
+                    format!("`new {name}()` is not valid; players are not allocated"),
+                ));
+            } else if !matches!(
+                name.as_str(),
+                "Region" | "BlockPos" | "Item" | "Block" | "Layout" | "ItemStack"
+            ) && !name.is_empty()
+            {
+                errors.push(Diagnostic::new(
+                    expr.span.clone(),
+                    format!("`new` is only for compile-time descriptors, not `{name}`"),
+                ));
             }
         }
         _ => {}
@@ -712,6 +776,9 @@ fn type_of(
                 Some(current_class.to_string())
             }
         }
+        ExprKind::String(_) => Some("String".into()),
+        ExprKind::Int(_) => Some("int".into()),
+        ExprKind::Bool(_) => Some("boolean".into()),
         ExprKind::Ident(name) => {
             if let Some((_, ty)) = locals.iter().find(|(n, _)| n == name) {
                 return named_type(ty);
@@ -843,6 +910,7 @@ fn deny_private_field(
     field_name: &str,
     fields: &[FieldInfo],
     errors: &mut Vec<Diagnostic>,
+    span: Span,
 ) {
     for f in fields {
         if f.class == owner
@@ -851,7 +919,7 @@ fn deny_private_field(
             && f.class != current_class
         {
             errors.push(Diagnostic::new(
-                0..0,
+                span.clone(),
                 format!(
                     "private field `{}.{field_name}` is not accessible here",
                     f.class
@@ -867,6 +935,7 @@ fn deny_private_method(
     method_name: &str,
     methods: &[MethodInfo],
     errors: &mut Vec<Diagnostic>,
+    span: Span,
 ) {
     for m in methods {
         if m.class == owner
@@ -875,7 +944,7 @@ fn deny_private_method(
             && m.class != current_class
         {
             errors.push(Diagnostic::new(
-                0..0,
+                span.clone(),
                 format!(
                     "private method `{}.{method_name}` is not accessible here",
                     m.class

@@ -89,6 +89,7 @@ pub fn write_install_tree(
         std::fs::write(&file, body).map_err(|e| e.to_string())?;
         written.insert(file, body.clone());
     }
+    crate::structure::write_structure_files(out_dir, image)?;
     Ok(written)
 }
 
