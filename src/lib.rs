@@ -239,7 +239,7 @@ public class Match {
             "TAGS section"
         );
         assert!(
-            art.inspect.contains("tick_values") || image.meta_json.contains("tick_values"),
+            image.meta_json.contains("gamerules") && image.meta_json.contains("commandblockoutput"),
             "{}",
             image.meta_json
         );
