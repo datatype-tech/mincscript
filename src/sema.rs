@@ -616,6 +616,31 @@ fn check_expr(
                         }
                     }
                 }
+                if name == "component" {
+                    if let Some(cfg) = config {
+                        if cfg.edition == Edition::Bedrock {
+                            errors.push(Diagnostic::new(
+                                expr.span.clone(),
+                                "`.component(...)` is Java item-component syntax; invalid on Bedrock",
+                            ));
+                        }
+                    }
+                }
+                if name == "raw" {
+                    if let Some(ExprKind::String(sel)) = args.first().map(|a| &a.kind) {
+                        check_raw_selector(config, sel, expr.span.clone(), errors);
+                    }
+                }
+                if name == "count" {
+                    if let Some(cfg) = config {
+                        if cfg.edition == Edition::Bedrock {
+                            errors.push(Diagnostic::new(
+                                expr.span.clone(),
+                                "`.count()` cannot be stored on Bedrock (no `execute store`); use `.exists()`",
+                            ));
+                        }
+                    }
+                }
                 let owner = if let ExprKind::Ident(class) = &base.kind {
                     Some(class.clone())
                 } else {
@@ -891,6 +916,41 @@ fn is_string_const(expr: &Expr) -> bool {
             rhs,
         } => is_string_const(lhs) && is_string_const(rhs),
         _ => false,
+    }
+}
+
+fn check_raw_selector(
+    config: Option<&MincConfig>,
+    sel: &str,
+    span: Span,
+    errors: &mut Vec<Diagnostic>,
+) {
+    let Some(cfg) = config else {
+        return;
+    };
+    match cfg.edition {
+        Edition::Java => {
+            if sel.contains("hasitem=") {
+                errors.push(Diagnostic::new(
+                    span,
+                    "selector `hasitem=` is Bedrock-only (use `.hasItem` → `execute if items` on Java)",
+                ));
+            }
+        }
+        Edition::Bedrock => {
+            if sel.contains("nbt=") {
+                errors.push(Diagnostic::new(
+                    span.clone(),
+                    "selector `nbt=` is Java-only",
+                ));
+            }
+            if sel.contains("distance=") {
+                errors.push(Diagnostic::new(
+                    span,
+                    "selector `distance=` is Java-only (use `.within` → `r=` on Bedrock)",
+                ));
+            }
+        }
     }
 }
 

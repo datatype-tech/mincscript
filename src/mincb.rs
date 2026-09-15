@@ -388,14 +388,23 @@ fn serde_meta(
         ));
     }
     fills.push(']');
+    let mut rules = String::from("[");
+    for (i, (k, v)) in info.gamerules.iter().enumerate() {
+        if i > 0 {
+            rules.push(',');
+        }
+        rules.push_str(&format!("{{\"name\":\"{k}\",\"value\":\"{v}\"}}"));
+    }
+    rules.push(']');
     format!(
-        "{{\"edition\":\"{}\",\"game_version\":\"{}\",\"host_tick\":\"{}\",\"dimension\":\"{}\",\"ticking_areas\":{},\"fills\":{},\"tick_values\":[{}]}}",
+        "{{\"edition\":\"{}\",\"game_version\":\"{}\",\"host_tick\":\"{}\",\"dimension\":\"{}\",\"ticking_areas\":{},\"fills\":{},\"gamerules\":{},\"tick_values\":[{}]}}",
         edition.as_str(),
         game_version,
         host.unwrap_or(""),
         info.dimension.as_deref().unwrap_or("overworld"),
         areas,
         fills,
+        rules,
         ""
     )
 }

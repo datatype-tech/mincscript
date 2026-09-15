@@ -20,6 +20,7 @@ pub struct BinaryInfo {
     pub clock: Option<String>,
     pub host_tick: Option<String>,
     pub functions: Vec<FunctionInfo>,
+    pub gamerules: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -379,6 +380,21 @@ pub fn extract_binary_info_with_revision(
         }
     }
 
+    let mut gamerules = Vec::new();
+    for item in &unit.items {
+        match item {
+            Item::Class(class) => {
+                for member in &class.members {
+                    if let Member::Method(m) = member {
+                        collect_gamerules(&m.body, &mut gamerules);
+                    }
+                }
+            }
+            Item::Chain(chain) => collect_gamerules(&chain.body, &mut gamerules),
+            _ => {}
+        }
+    }
+
     BinaryInfo {
         pack,
         score_revision,
@@ -394,6 +410,98 @@ pub fn extract_binary_info_with_revision(
         clock,
         host_tick,
         functions,
+        gamerules,
+    }
+}
+
+fn collect_gamerules(stmts: &[Stmt], out: &mut Vec<(String, String)>) {
+    for stmt in stmts {
+        match &stmt.kind {
+            StmtKind::Expr(expr) => collect_gamerules_expr(expr, out),
+            StmtKind::Annotated { inner, .. } => {
+                collect_gamerules(std::slice::from_ref(inner), out)
+            }
+            StmtKind::If {
+                then_body,
+                else_body,
+                cond,
+                ..
+            } => {
+                collect_gamerules_expr(cond, out);
+                collect_gamerules(then_body, out);
+                if let Some(e) = else_body {
+                    collect_gamerules(e, out);
+                }
+            }
+            StmtKind::Foreach { body, iter, .. } => {
+                collect_gamerules_expr(iter, out);
+                collect_gamerules(body, out);
+            }
+            StmtKind::Context { body, .. } => collect_gamerules(body, out),
+            StmtKind::Switch {
+                expr,
+                arms,
+                default,
+            } => {
+                collect_gamerules_expr(expr, out);
+                for (pat, body) in arms {
+                    collect_gamerules_expr(pat, out);
+                    collect_gamerules(body, out);
+                }
+                if let Some(body) = default {
+                    collect_gamerules(body, out);
+                }
+            }
+            StmtKind::Assign { target, value, .. } => {
+                collect_gamerules_expr(target, out);
+                collect_gamerules_expr(value, out);
+            }
+            StmtKind::Return(Some(expr))
+            | StmtKind::Local {
+                init: Some(expr), ..
+            } => collect_gamerules_expr(expr, out),
+            _ => {}
+        }
+    }
+}
+
+fn collect_gamerules_expr(expr: &Expr, out: &mut Vec<(String, String)>) {
+    match &expr.kind {
+        ExprKind::Call { callee, args } => {
+            if let ExprKind::Field { base, name } = &callee.kind {
+                if name == "gamerule" {
+                    if let ExprKind::Ident(recv) = &base.kind {
+                        if recv == "World" && args.len() >= 2 {
+                            if let (ExprKind::String(k), v) = (&args[0].kind, &args[1]) {
+                                let val = match &v.kind {
+                                    ExprKind::String(s) => s.clone(),
+                                    ExprKind::Bool(b) => b.to_string(),
+                                    ExprKind::Int(n) => n.to_string(),
+                                    _ => String::new(),
+                                };
+                                out.push((k.clone(), val));
+                            }
+                        }
+                    }
+                }
+            }
+            collect_gamerules_expr(callee, out);
+            for a in args {
+                collect_gamerules_expr(a, out);
+            }
+        }
+        ExprKind::Unary { expr, .. } => collect_gamerules_expr(expr, out),
+        ExprKind::Binary { lhs, rhs, .. } => {
+            collect_gamerules_expr(lhs, out);
+            collect_gamerules_expr(rhs, out);
+        }
+        ExprKind::Field { base, .. } => collect_gamerules_expr(base, out),
+        ExprKind::New { args, .. } => {
+            for a in args {
+                collect_gamerules_expr(a, out);
+            }
+        }
+        _ => {}
     }
 }
 

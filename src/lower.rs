@@ -238,6 +238,9 @@ impl<'a> Lower<'a> {
                             }
                         }
                         let mut cmds = self.lower_block(&method.body);
+                        if !method.is_static {
+                            cmds.splice(0..0, self.instance_score_inits());
+                        }
                         if cmds.len() as u32 > self.config.function_command_limit {
                             self.errors.push(Diagnostic::new(
                                 method.span.clone(),
@@ -302,6 +305,19 @@ impl<'a> Lower<'a> {
             tick_paths,
             load_paths,
         }
+    }
+
+    fn instance_score_inits(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for f in self.fields.values() {
+            if f.class == self.current_class && !f.is_static && f.kind == SymbolKind::Objective {
+                out.push(format!(
+                    "scoreboard players add {} {} 0",
+                    self.this_sel, f.short
+                ));
+            }
+        }
+        out
     }
 
     fn fn_path(&self, class: &str, method: &str) -> String {

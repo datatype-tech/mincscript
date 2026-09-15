@@ -560,4 +560,53 @@ public chain C {
         assert!(dump.contains("#t0 mt"), "{dump}");
         assert!(dump.contains("operation"), "{dump}");
     }
+
+    #[test]
+    fn instance_int_emits_add_zero() {
+        let src = r#"
+pack demo;
+public class Runner {
+    private int keys;
+    public void giveKey() { this.keys += 1; }
+}
+"#;
+        let unit = parse(src).unwrap();
+        let info = extract_binary_info(&unit);
+        let cfg = crate::config::MincConfig {
+            edition: crate::config::Edition::Bedrock,
+            pack: "demo".into(),
+            ..crate::config::MincConfig::default()
+        };
+        let dump =
+            crate::lower::dump_commands(&crate::lower::lower_project(&unit, &cfg, &info).unwrap());
+        assert!(
+            dump.contains("scoreboard players add @s") && dump.contains(" 0"),
+            "{dump}"
+        );
+    }
+
+    #[test]
+    fn players_raw_checked_against_edition() {
+        let src = r#"
+pack demo;
+public chain C {
+    foreach (Player p : Players.raw("@a[hasitem={item=gold_ingot}]")) {
+        as (p) { cmd("say x"); }
+    }
+}
+"#;
+        let unit = parse(src).unwrap();
+        let cfg = crate::config::MincConfig {
+            edition: crate::config::Edition::Java,
+            pack: "demo".into(),
+            game_version: "1.21.11".into(),
+            ..crate::config::MincConfig::default()
+        };
+        let errors = sema::check_with_config(&unit, Some(&cfg));
+        assert!(
+            errors.iter().any(|e| e.message.contains("hasitem")),
+            "{errors:?}"
+        );
+        assert!(errors.iter().any(|e| e.span.end > e.span.start));
+    }
 }
