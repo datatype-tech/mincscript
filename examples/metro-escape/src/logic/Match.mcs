@@ -1,0 +1,17 @@
+pack metro.escape;
+
+public enum Phase { LOBBY, COUNTDOWN, PLAY, EXTRACT, END }
+
+public class Match {
+    public static int phase;
+    public static int countdown;
+    public static int playTick;
+}
+
+public static class Boot {
+    @OnLoad
+    public static void setup() {
+        World.gamerule("commandblockoutput", false);
+        World.gamerule("sendcommandfeedback", false);
+    }
+}

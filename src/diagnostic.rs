@@ -9,6 +9,7 @@ use crate::span::Span;
 pub struct Diagnostic {
     pub span: Span,
     pub message: String,
+    pub file: Option<String>,
 }
 
 impl Diagnostic {
@@ -16,6 +17,7 @@ impl Diagnostic {
         Self {
             span,
             message: message.into(),
+            file: None,
         }
     }
 }

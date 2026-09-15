@@ -1,0 +1,19 @@
+pack metro.escape;
+
+@Chain("Play")
+@Repeat
+@AlwaysActive
+public chain Play {
+    if (Match.phase == Phase.PLAY) {
+        foreach (Player p : Players.all()) {
+            as (p) at (p) {
+                Runner.of(p).tickHold(ExtractZone.BOX);
+            }
+        }
+        Match.playTick += 1;
+        if (Match.playTick == 1200) {
+            Match.phase = Phase.EXTRACT;
+            title(Players.all(), Title.TITLE, "撤离点已开启");
+        }
+    }
+}

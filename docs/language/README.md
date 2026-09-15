@@ -1,6 +1,6 @@
 # MincScript language design
 
-**This folder is a design spec only.** No compiler, CLI, or binary writer is implemented here. The existing `src/` frontend (expressions + `let`) is a placeholder and will be replaced to match this document.
+**This folder is the language contract.** The Rust compiler in `src/` implements it: tokenizer, parser, `minc check` / `minc build`, MINCB, and edition-specific command lowering. A buildable sketch is `examples/metro-escape/`.
 
 MincScript is a **Java-shaped language that compiles to Minecraft**. A class is an in-world object. A field is a scoreboard (or a tag). Access modifiers are enforced by the compiler so gameplay state cannot be poked from arbitrary files. Each project has a config file that names the **edition** (Java or Bedrock) and the **game version**. Chain files are literally one command-block row (or stack). A controller file places those chains, sets their coordinates and connection style, and can also plant fixed blocks and chest contents. The compiler emits one **MINCB** binary that stores the whole machine.
 

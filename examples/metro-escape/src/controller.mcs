@@ -1,0 +1,19 @@
+pack metro.escape;
+
+@Controller
+world MetroEscape {
+    origin (0, 64, 0);
+    dimension overworld;
+
+    tickingArea "metro_station" circle (32, 64, 0) r=4 preload;
+
+    chain Lobby at (0, 70, 0) layout linear facing east;
+    chain Play at (2, 64, 0) layout stack facing up;
+    chain Extract at (4, 64, 0) layout stack facing up;
+
+    clock Play;
+    host tick = functions;
+
+    include place Station;
+    link Lobby.start => Play;
+}

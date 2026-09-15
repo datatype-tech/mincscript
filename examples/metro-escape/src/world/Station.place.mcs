@@ -1,0 +1,15 @@
+pack metro.escape.world;
+
+place Station {
+    gold_block at (0, 63, 0);
+    fill (16, 56, -16) to (48, 56, 16) with stone_bricks;
+    chest crate1 at (32, 64, 4) facing west {
+        slot 0: iron_ingot * 4;
+        slot 1: bread * 2;
+        slot 2: gold_ingot * 1;
+        slot 13: written_book title "撤离须知" pages "带金锭到东侧站三秒";
+    }
+    barrel stash at (33, 64, 4) {
+        slot 0: cooked_beef * 8;
+    }
+}

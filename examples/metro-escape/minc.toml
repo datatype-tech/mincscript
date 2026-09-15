@@ -1,0 +1,31 @@
+[project]
+name = "metro-escape"
+pack = "metro.escape"
+score_revision = 1
+
+[target]
+edition = "bedrock"
+game_version = "1.21.70"
+
+[emit]
+mincb = true
+functions = true
+datapack_or_behavior_pack = true
+
+[world]
+dimension = "overworld"
+origin = [0, 64, 0]
+
+[chains]
+default_layout = "stack"
+default_facing = "up"
+clock = "Play"
+
+[command_block]
+default_type = "chain"
+default_redstone = "always_active"
+default_conditional = false
+track_output = false
+
+[limits]
+function_command_limit = 10000

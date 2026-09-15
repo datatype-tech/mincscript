@@ -1,0 +1,676 @@
+//! MINCB (Minc Command Binary) — `docs/language/05-mincb-and-compile.md`.
+
+use crate::config::Edition;
+use crate::extract::{BinaryInfo, SymbolKind};
+use crate::layout::CbInstance;
+
+const MAGIC: &[u8; 4] = b"MINC";
+const FORMAT_MAJOR: u16 = 1;
+const FORMAT_MINOR: u16 = 0;
+
+const SID_SYMB: u32 = u32::from_le_bytes(*b"SYMB");
+const SID_OBJT: u32 = u32::from_le_bytes(*b"OBJT");
+const SID_FUNC: u32 = u32::from_le_bytes(*b"FUNC");
+const SID_CHAIN: u32 = u32::from_le_bytes(*b"CHAI");
+const SID_CBLK: u32 = u32::from_le_bytes(*b"CBLK");
+const SID_WBLK: u32 = u32::from_le_bytes(*b"WBLK");
+const SID_CONT: u32 = u32::from_le_bytes(*b"CONT");
+const SID_LINK: u32 = u32::from_le_bytes(*b"LINK");
+const SID_META: u32 = u32::from_le_bytes(*b"META");
+
+/// Fully lowered image written by `minc build`.
+#[derive(Debug, Clone)]
+pub struct MincbImage {
+    pub edition: Edition,
+    pub game_version: String,
+    pub pack: String,
+    pub origin: [i32; 3],
+    pub score_revision: u32,
+    pub symbols: Vec<SymbRec>,
+    pub objectives: Vec<ObjtRec>,
+    pub functions: Vec<FuncRec>,
+    pub chains: Vec<ChainRec>,
+    pub command_blocks: Vec<CblkRec>,
+    pub world_blocks: Vec<WblkRec>,
+    pub containers: Vec<ContRec>,
+    pub links: Vec<LinkRec>,
+    pub meta_json: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SymbRec {
+    pub id: u16,
+    pub kind: u8,
+    pub short: String,
+    pub qualified: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ObjtRec {
+    pub symb: u16,
+    pub dummy_only: u8,
+    pub display: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FuncRec {
+    pub symb: u16,
+    pub path: String,
+    pub body: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChainRec {
+    pub name_symb: u16,
+    pub layout: u8,
+    pub facing: u8,
+    pub origin: [i32; 3],
+    pub length: u16,
+    pub clock: u8,
+    pub pack_mode: u8,
+}
+
+#[derive(Debug, Clone)]
+pub struct CblkRec {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub facing: u8,
+    pub mode: u8,
+    pub flags: u8,
+    pub delay_ticks: u32,
+    pub command: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct WblkRec {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub block: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContRec {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub block: String,
+    pub facing: u8,
+    pub slots: Vec<ContSlot>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContSlot {
+    pub slot: u8,
+    pub item: String,
+    pub count: u16,
+    pub data: i32,
+    pub nbt: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct LinkRec {
+    pub from_chain: u16,
+    pub from_label: u16,
+    pub to_chain: u16,
+    pub kind: u8,
+}
+
+/// Encode extracted program facts without lowered commands (parser / unit tests).
+pub fn encode(info: &BinaryInfo, edition: u8) -> Vec<u8> {
+    let edition = match edition {
+        1 => Edition::Java,
+        _ => Edition::Bedrock,
+    };
+    encode_image(&image_from_extract(info, edition, "unspecified"))
+}
+
+pub fn image_from_extract(info: &BinaryInfo, edition: Edition, game_version: &str) -> MincbImage {
+    let origin = info.origin.unwrap_or([0, 64, 0]);
+    let origin = [origin[0] as i32, origin[1] as i32, origin[2] as i32];
+    let mut symbols = Vec::new();
+    for (i, sym) in info.symbols.iter().enumerate() {
+        symbols.push(SymbRec {
+            id: i as u16 + 1,
+            kind: sym.kind as u8,
+            short: sym.id.clone(),
+            qualified: sym.qualified.clone(),
+        });
+    }
+    let mut objectives = Vec::new();
+    for (i, sym) in info.symbols.iter().enumerate() {
+        if sym.kind == SymbolKind::Objective {
+            objectives.push(ObjtRec {
+                symb: i as u16 + 1,
+                dummy_only: 1,
+                display: None,
+            });
+        }
+    }
+    let mut chains = Vec::new();
+    for chain in &info.chains {
+        let name_symb = symbols
+            .iter()
+            .find(|s| s.qualified.ends_with(&format!(".chain.{}", chain.name)))
+            .map(|s| s.id)
+            .unwrap_or(0);
+        let origin = chain.origin.unwrap_or([0, 0, 0]);
+        chains.push(ChainRec {
+            name_symb,
+            layout: layout_id(chain.layout.as_deref()),
+            facing: facing_id(chain.facing.as_deref()),
+            origin: [origin[0] as i32, origin[1] as i32, origin[2] as i32],
+            length: 0,
+            clock: u8::from(chain.is_clock),
+            pack_mode: 0,
+        });
+    }
+    let world_blocks = info
+        .blocks
+        .iter()
+        .map(|b| WblkRec {
+            x: b.at[0] as i32,
+            y: b.at[1] as i32,
+            z: b.at[2] as i32,
+            block: b.block.clone(),
+        })
+        .collect();
+    let containers = info
+        .containers
+        .iter()
+        .map(|c| ContRec {
+            x: c.at[0] as i32,
+            y: c.at[1] as i32,
+            z: c.at[2] as i32,
+            block: c.kind.block_id().to_string(),
+            facing: facing_id(c.facing.as_deref()),
+            slots: c
+                .slots
+                .iter()
+                .map(|s| ContSlot {
+                    slot: s.slot as u8,
+                    item: s.item.clone(),
+                    count: s.count as u16,
+                    data: s.data.unwrap_or(0) as i32,
+                    nbt: nbt_from_slot(s.title.as_deref(), s.pages.as_deref()),
+                })
+                .collect(),
+        })
+        .collect();
+    let links = info
+        .links
+        .iter()
+        .map(|_l| LinkRec {
+            from_chain: 0,
+            from_label: 0,
+            to_chain: 0,
+            kind: 0,
+        })
+        .collect();
+    let meta = serde_meta(info, edition, game_version, info.host_tick.as_deref());
+    MincbImage {
+        edition,
+        game_version: game_version.to_string(),
+        pack: info.pack.clone(),
+        origin,
+        score_revision: info.score_revision,
+        symbols,
+        objectives,
+        functions: Vec::new(),
+        chains,
+        command_blocks: Vec::new(),
+        world_blocks,
+        containers,
+        links,
+        meta_json: meta,
+    }
+}
+
+fn nbt_from_slot(title: Option<&str>, pages: Option<&str>) -> String {
+    match (title, pages) {
+        (None, None) => String::new(),
+        (title, pages) => format!(
+            "{{\"title\":\"{}\",\"pages\":\"{}\"}}",
+            title.unwrap_or(""),
+            pages.unwrap_or("")
+        ),
+    }
+}
+
+fn serde_meta(
+    info: &BinaryInfo,
+    edition: Edition,
+    game_version: &str,
+    host: Option<&str>,
+) -> String {
+    let mut areas = String::from("[");
+    for (i, a) in info.ticking_areas.iter().enumerate() {
+        if i > 0 {
+            areas.push(',');
+        }
+        let center = a.center.unwrap_or([0, 0, 0]);
+        areas.push_str(&format!(
+            "{{\"name\":\"{}\",\"center\":[{},{},{}],\"radius\":{},\"preload\":{}}}",
+            a.name,
+            center[0],
+            center[1],
+            center[2],
+            a.radius.unwrap_or(0),
+            a.preload
+        ));
+    }
+    areas.push(']');
+    format!(
+        "{{\"edition\":\"{}\",\"game_version\":\"{}\",\"host_tick\":\"{}\",\"dimension\":\"{}\",\"ticking_areas\":{}}}",
+        edition.as_str(),
+        game_version,
+        host.unwrap_or(""),
+        info.dimension.as_deref().unwrap_or("overworld"),
+        areas
+    )
+}
+
+pub fn layout_id(layout: Option<&str>) -> u8 {
+    match layout.unwrap_or("stack") {
+        "linear" => 0,
+        "stack" => 1,
+        "snake" => 2,
+        "box" => 3,
+        "points" => 4,
+        _ => 1,
+    }
+}
+
+pub fn facing_id(facing: Option<&str>) -> u8 {
+    match facing.unwrap_or("up") {
+        "down" => 0,
+        "up" => 1,
+        "north" => 2,
+        "south" => 3,
+        "west" => 4,
+        "east" => 5,
+        _ => 1,
+    }
+}
+
+pub fn encode_image(image: &MincbImage) -> Vec<u8> {
+    let mut sections: Vec<(u32, u32, Vec<u8>)> = Vec::new();
+
+    let mut symb = Vec::new();
+    for s in &image.symbols {
+        write_u16(&mut symb, s.id);
+        symb.push(s.kind);
+        write_str16(&mut symb, &s.short);
+        write_str16(&mut symb, &s.qualified);
+    }
+    sections.push((SID_SYMB, image.symbols.len() as u32, symb));
+
+    let mut objt = Vec::new();
+    for o in &image.objectives {
+        write_u16(&mut objt, o.symb);
+        objt.push(o.dummy_only);
+        match &o.display {
+            Some(d) => {
+                objt.push(1);
+                write_str16(&mut objt, d);
+            }
+            None => objt.push(0),
+        }
+    }
+    sections.push((SID_OBJT, image.objectives.len() as u32, objt));
+
+    let mut func = Vec::new();
+    for f in &image.functions {
+        write_u16(&mut func, f.symb);
+        write_str16(&mut func, &f.path);
+        write_u32(&mut func, f.body.len() as u32);
+        func.extend_from_slice(f.body.as_bytes());
+    }
+    sections.push((SID_FUNC, image.functions.len() as u32, func));
+
+    let mut chain = Vec::new();
+    for c in &image.chains {
+        write_u16(&mut chain, c.name_symb);
+        chain.push(c.layout);
+        chain.push(c.facing);
+        write_i32(&mut chain, c.origin[0]);
+        write_i32(&mut chain, c.origin[1]);
+        write_i32(&mut chain, c.origin[2]);
+        write_u16(&mut chain, c.length);
+        chain.push(c.clock);
+        chain.push(c.pack_mode);
+    }
+    sections.push((SID_CHAIN, image.chains.len() as u32, chain));
+
+    let mut cblk = Vec::new();
+    for b in &image.command_blocks {
+        write_i32(&mut cblk, b.x);
+        write_i32(&mut cblk, b.y);
+        write_i32(&mut cblk, b.z);
+        cblk.push(b.facing);
+        cblk.push(b.mode);
+        cblk.push(b.flags);
+        write_u32(&mut cblk, b.delay_ticks);
+        write_u32(&mut cblk, b.command.len() as u32);
+        cblk.extend_from_slice(b.command.as_bytes());
+    }
+    sections.push((SID_CBLK, image.command_blocks.len() as u32, cblk));
+
+    let mut palette: Vec<String> = Vec::new();
+    let mut wblk = Vec::new();
+    for b in &image.world_blocks {
+        let idx = intern(&mut palette, &b.block);
+        write_i32(&mut wblk, b.x);
+        write_i32(&mut wblk, b.y);
+        write_i32(&mut wblk, b.z);
+        write_u16(&mut wblk, idx);
+        write_u32(&mut wblk, 0);
+    }
+    let mut wblk_full = Vec::new();
+    write_u32(&mut wblk_full, palette.len() as u32);
+    for p in &palette {
+        write_str16(&mut wblk_full, p);
+    }
+    wblk_full.extend_from_slice(&wblk);
+    sections.push((SID_WBLK, image.world_blocks.len() as u32, wblk_full));
+
+    let mut cont = Vec::new();
+    for c in &image.containers {
+        write_i32(&mut cont, c.x);
+        write_i32(&mut cont, c.y);
+        write_i32(&mut cont, c.z);
+        write_str16(&mut cont, &c.block);
+        cont.push(c.facing);
+        write_u16(&mut cont, c.slots.len() as u16);
+        for s in &c.slots {
+            cont.push(s.slot);
+            write_str16(&mut cont, &s.item);
+            write_u16(&mut cont, s.count);
+            write_i32(&mut cont, s.data);
+            write_u32(&mut cont, s.nbt.len() as u32);
+            cont.extend_from_slice(s.nbt.as_bytes());
+        }
+    }
+    sections.push((SID_CONT, image.containers.len() as u32, cont));
+
+    let mut link = Vec::new();
+    for l in &image.links {
+        write_u16(&mut link, l.from_chain);
+        write_u16(&mut link, l.from_label);
+        write_u16(&mut link, l.to_chain);
+        link.push(l.kind);
+    }
+    sections.push((SID_LINK, image.links.len() as u32, link));
+
+    let mut meta = Vec::new();
+    write_u32(&mut meta, image.meta_json.len() as u32);
+    meta.extend_from_slice(image.meta_json.as_bytes());
+    sections.push((SID_META, 1, meta));
+
+    let mut flags = 0u8;
+    if !image.functions.is_empty() {
+        flags |= 1;
+    }
+    if !image.command_blocks.is_empty() {
+        flags |= 2;
+    }
+    if !image.world_blocks.is_empty() || !image.containers.is_empty() {
+        flags |= 4;
+    }
+
+    let table_bytes = 16 * sections.len();
+    let header = 40 + table_bytes;
+    let gv = encode_str16(&image.game_version);
+    let pk = encode_str16(&image.pack);
+    let gv_off = header as u32;
+    let pk_off = gv_off + gv.len() as u32;
+    let mut cursor = pk_off + pk.len() as u32;
+
+    let mut table = Vec::new();
+    let mut bodies = Vec::new();
+    for (id, count, data) in &sections {
+        write_u32(&mut table, *id);
+        write_u32(&mut table, cursor);
+        write_u32(&mut table, data.len() as u32);
+        write_u32(&mut table, *count);
+        cursor += data.len() as u32;
+        bodies.extend_from_slice(data);
+    }
+
+    let mut out = Vec::new();
+    out.extend_from_slice(MAGIC);
+    write_u16(&mut out, FORMAT_MAJOR);
+    write_u16(&mut out, FORMAT_MINOR);
+    out.push(image.edition.byte());
+    out.push(flags);
+    write_u16(&mut out, 0);
+    write_u32(&mut out, gv_off);
+    write_u32(&mut out, pk_off);
+    write_i32(&mut out, image.origin[0]);
+    write_i32(&mut out, image.origin[1]);
+    write_i32(&mut out, image.origin[2]);
+    write_u32(&mut out, image.score_revision);
+    write_u32(&mut out, sections.len() as u32);
+    debug_assert_eq!(out.len(), 40);
+    out.extend_from_slice(&table);
+    debug_assert_eq!(out.len(), header);
+    out.extend_from_slice(&gv);
+    out.extend_from_slice(&pk);
+    out.extend_from_slice(&bodies);
+    out
+}
+
+/// Read the pack name from a MINCB blob (spec header `pack_off`).
+pub fn decode_pack(bytes: &[u8]) -> Option<String> {
+    if bytes.len() < 40 || &bytes[0..4] != MAGIC {
+        return None;
+    }
+    let pack_off = u32::from_le_bytes(bytes[16..20].try_into().ok()?) as usize;
+    let (pack, _) = read_str16(bytes.get(pack_off..)?)?;
+    Some(pack)
+}
+
+pub fn decode_header(bytes: &[u8]) -> Option<InspectHeader> {
+    if bytes.len() < 40 || &bytes[0..4] != MAGIC {
+        return None;
+    }
+    let major = u16::from_le_bytes(bytes[4..6].try_into().ok()?);
+    let minor = u16::from_le_bytes(bytes[6..8].try_into().ok()?);
+    let edition = bytes[8];
+    let flags = bytes[9];
+    let gv_off = u32::from_le_bytes(bytes[12..16].try_into().ok()?) as usize;
+    let pack_off = u32::from_le_bytes(bytes[16..20].try_into().ok()?) as usize;
+    let ox = i32::from_le_bytes(bytes[20..24].try_into().ok()?);
+    let oy = i32::from_le_bytes(bytes[24..28].try_into().ok()?);
+    let oz = i32::from_le_bytes(bytes[28..32].try_into().ok()?);
+    let rev = u32::from_le_bytes(bytes[32..36].try_into().ok()?);
+    let (game_version, _) = read_str16(bytes.get(gv_off..)?)?;
+    let (pack, _) = read_str16(bytes.get(pack_off..)?)?;
+    Some(InspectHeader {
+        major,
+        minor,
+        edition,
+        flags,
+        game_version,
+        pack,
+        origin: [ox, oy, oz],
+        score_revision: rev,
+    })
+}
+
+#[derive(Debug, Clone)]
+pub struct InspectHeader {
+    pub major: u16,
+    pub minor: u16,
+    pub edition: u8,
+    pub flags: u8,
+    pub game_version: String,
+    pub pack: String,
+    pub origin: [i32; 3],
+    pub score_revision: u32,
+}
+
+pub fn inspect_text(bytes: &[u8], info: Option<&BinaryInfo>, blocks: &[CbInstance]) -> String {
+    let Some(h) = decode_header(bytes) else {
+        return "not a MINCB file\n".into();
+    };
+    let edition = match h.edition {
+        1 => "java",
+        2 => "bedrock",
+        n => return format!("unknown edition {n}\n"),
+    };
+    let mut out = format!(
+        "MINCB format {}.{}\nedition {edition}\ngame_version {}\npack {}\norigin {} {} {}\nscore_revision {}\n",
+        h.major, h.minor, h.game_version, h.pack, h.origin[0], h.origin[1], h.origin[2], h.score_revision
+    );
+    if let Some(info) = info {
+        out.push_str("symbols:\n");
+        for s in &info.symbols {
+            out.push_str(&format!(
+                "  {} {} {}\n",
+                kind_name(s.kind),
+                s.id,
+                s.qualified
+            ));
+        }
+        out.push_str("chains:\n");
+        for c in &info.chains {
+            out.push_str(&format!(
+                "  {} layout={} facing={} origin={:?} clock={}\n",
+                c.name,
+                c.layout.as_deref().unwrap_or("-"),
+                c.facing.as_deref().unwrap_or("-"),
+                c.origin,
+                c.is_clock
+            ));
+        }
+        if !info.containers.is_empty() {
+            out.push_str("containers:\n");
+            for c in &info.containers {
+                out.push_str(&format!(
+                    "  {} {} at {:?}\n",
+                    c.kind.block_id(),
+                    c.name,
+                    c.at
+                ));
+            }
+        }
+    } else if let Some(extra) = decode_sections(bytes) {
+        out.push_str(&extra);
+    }
+    if let Some(first) = blocks.first() {
+        out.push_str(&format!(
+            "first_cb {} {} {} {}\n",
+            first.x, first.y, first.z, first.command
+        ));
+    }
+    if let Some(last) = blocks.last() {
+        out.push_str(&format!(
+            "last_cb {} {} {} {}\n",
+            last.x, last.y, last.z, last.command
+        ));
+    }
+    out
+}
+
+fn decode_sections(bytes: &[u8]) -> Option<String> {
+    let count = u32::from_le_bytes(bytes.get(36..40)?.try_into().ok()?) as usize;
+    let mut out = String::new();
+    for i in 0..count {
+        let off = 40 + i * 16;
+        let id = u32::from_le_bytes(bytes.get(off..off + 4)?.try_into().ok()?);
+        let offset = u32::from_le_bytes(bytes.get(off + 4..off + 8)?.try_into().ok()?) as usize;
+        let size = u32::from_le_bytes(bytes.get(off + 8..off + 12)?.try_into().ok()?) as usize;
+        let n = u32::from_le_bytes(bytes.get(off + 12..off + 16)?.try_into().ok()?) as usize;
+        let body = bytes.get(offset..offset + size)?;
+        if id == SID_SYMB {
+            out.push_str("symbols:\n");
+            let mut p = 0usize;
+            for _ in 0..n {
+                if p + 3 > body.len() {
+                    break;
+                }
+                let sid = u16::from_le_bytes(body[p..p + 2].try_into().ok()?);
+                let kind = body[p + 2];
+                p += 3;
+                let (short, used) = read_str16(body.get(p..)?)?;
+                p += used;
+                let (qualified, used) = read_str16(body.get(p..)?)?;
+                p += used;
+                let kn = match kind {
+                    0 => "obj",
+                    1 => "tag",
+                    2 => "fake",
+                    3 => "fn",
+                    4 => "chain",
+                    _ => "?",
+                };
+                out.push_str(&format!("  {kn} {short} {qualified} (#{sid})\n"));
+            }
+        } else if id == SID_CBLK {
+            out.push_str(&format!("command_blocks: {n}\n"));
+            if n > 0 {
+                let x = i32::from_le_bytes(body.get(0..4)?.try_into().ok()?);
+                let y = i32::from_le_bytes(body.get(4..8)?.try_into().ok()?);
+                let z = i32::from_le_bytes(body.get(8..12)?.try_into().ok()?);
+                let mut q = 12 + 1 + 1 + 1 + 4;
+                let clen = u32::from_le_bytes(body.get(q..q + 4)?.try_into().ok()?) as usize;
+                q += 4;
+                let cmd = std::str::from_utf8(body.get(q..q + clen)?).ok()?;
+                out.push_str(&format!("first_cb {x} {y} {z} {cmd}\n"));
+            }
+        }
+    }
+    Some(out)
+}
+
+fn kind_name(kind: SymbolKind) -> &'static str {
+    match kind {
+        SymbolKind::Objective => "obj",
+        SymbolKind::Tag => "tag",
+        SymbolKind::FakePlayer => "fake",
+        SymbolKind::Function => "fn",
+        SymbolKind::Chain => "chain",
+    }
+}
+
+fn intern(palette: &mut Vec<String>, name: &str) -> u16 {
+    if let Some(i) = palette.iter().position(|p| p == name) {
+        return i as u16;
+    }
+    palette.push(name.to_string());
+    (palette.len() - 1) as u16
+}
+
+fn write_u16(out: &mut Vec<u8>, v: u16) {
+    out.extend_from_slice(&v.to_le_bytes());
+}
+
+fn write_u32(out: &mut Vec<u8>, v: u32) {
+    out.extend_from_slice(&v.to_le_bytes());
+}
+
+fn write_i32(out: &mut Vec<u8>, v: i32) {
+    out.extend_from_slice(&v.to_le_bytes());
+}
+
+fn write_str16(out: &mut Vec<u8>, s: &str) {
+    write_u16(out, s.len() as u16);
+    out.extend_from_slice(s.as_bytes());
+}
+
+fn encode_str16(s: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    write_str16(&mut out, s);
+    out
+}
+
+fn read_str16(bytes: &[u8]) -> Option<(String, usize)> {
+    if bytes.len() < 2 {
+        return None;
+    }
+    let n = u16::from_le_bytes(bytes[0..2].try_into().ok()?) as usize;
+    let s = std::str::from_utf8(bytes.get(2..2 + n)?).ok()?;
+    Some((s.to_string(), 2 + n))
+}

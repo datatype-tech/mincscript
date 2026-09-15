@@ -1,38 +1,37 @@
 # MincScript
 
-A Java-shaped language that will compile to Minecraft (Java Edition or Bedrock). **Language design** (no compiler for this syntax yet): [`docs/language/`](docs/language/README.md).
+A Java-shaped language that compiles to Minecraft (Java Edition or Bedrock). Language design: [`docs/language/`](docs/language/README.md). Command grammars live in [`docs/minecraft-commands/`](docs/minecraft-commands/README.md).
 
-This repository currently has a **placeholder frontend**: a Logos lexer, a Chumsky parser, and Ariadne diagnostics that only accept `let` and arithmetic. Interpreter and the design in `docs/language/` wait for later work.
-
-Minecraft command grammars (Java + Bedrock), intended for the compiler backend, live in [`docs/minecraft-commands/`](docs/minecraft-commands/README.md). Bedrock-as-game-engine (地铁逃生-style match FSM, save vs execute) is in [`docs/minecraft-commands/bedrock/gameplay/`](docs/minecraft-commands/bedrock/gameplay/README.md); a drop-in behavior pack is [`examples/bedrock-metro-escape/`](examples/bedrock-metro-escape/).
+The `minc` compiler walks **tokenizer → parser (syntax validation) → type check → command lowering → MINCB**. Bedrock and Java each get their own execute/selector printer; they do not share an execute walker.
 
 ## Status
 
-The parser accepts:
+Implemented, starting from the lexer:
 
-- `let` bindings: `let x = 1 + 2;`
-- expression statements: `1 + 2 * 3;`
-- integers, identifiers, unary `-`, `+ - * /`, and comparisons (`== != < > <= >=`)
-- `//` line comments
+- **Tokenizer** — Java-like keywords, Unicode identifiers, `//` / `/* */`, string escapes
+- **Parser** — `pack` / `import`, classes, enums, chains, `controller` / `world`, `place` / chests, `if` / `foreach` / `switch`, `as`/`at`, locals, `new`, `cmd`
+- **Check** — private fields and methods stay inside their class
+- **Extract** — stable score/tag ids (`m00`, `t0a`, …) for MINCB `SYMB`
+- **Lower** — dummy scores, tags, `execute` (edition-specific), chain flatten, stack/linear/snake/box layouts
+- **CLI** — `new`, `check`, `build`, `inspect`, `dump --commands`, `layout`
+
+A buildable 地铁逃生 sketch is [`examples/metro-escape/`](examples/metro-escape/).
 
 ## Build
 
 ```bash
 cargo test
-cargo run -- examples/hello.mcs
+cargo run --bin minc -- check examples/metro-escape
+cargo run --bin minc -- build examples/metro-escape --out dist/
+cargo run --bin minc -- dump --commands
 ```
 
-Pipe source on stdin if no file is given:
-
-```bash
-echo 'let x = 1 + 2;' | cargo run
-```
+`minc new my-pack --edition bedrock --version 1.21.70` writes `minc.toml` plus a clock chain.
 
 ## Crates
 
 | Crate | Role |
 | --- | --- |
 | `logos` | Lexer |
-| `chumsky` 0.9 | Parser combinators |
 | `ariadne` 0.5 | Error reports |
 | `thiserror` | Error types |

@@ -1,0 +1,13 @@
+pack metro.escape;
+
+@Chain("Extract")
+@AlwaysActive
+public chain Extract {
+    if (Match.phase == Phase.EXTRACT) {
+        foreach (Player p : Players.all()) {
+            as (p) {
+                Runner.of(p).tickHold(ExtractZone.BOX);
+            }
+        }
+    }
+}

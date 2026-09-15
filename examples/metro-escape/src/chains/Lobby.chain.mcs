@@ -1,0 +1,9 @@
+pack metro.escape;
+
+@Chain("Lobby")
+@Impulse
+public chain Lobby {
+    label start;
+    Match.phase = Phase.COUNTDOWN;
+    title(Players.all(), Title.TITLE, "即将出发");
+}

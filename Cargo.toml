@@ -6,6 +6,15 @@ rust-version = "1.80"
 license = "MPL-2.0"
 description = "The MincScript programming language"
 readme = "README.md"
+autobins = false
+
+[lib]
+name = "mincscript"
+path = "src/lib.rs"
+
+[[bin]]
+name = "minc"
+path = "src/main.rs"
 
 [dependencies]
 ariadne = "0.5.1"

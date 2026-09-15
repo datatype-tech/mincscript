@@ -1,0 +1,39 @@
+pack metro.escape;
+
+public class Runner {
+    private int keys;
+    private int hold;
+    private boolean extracted;
+    private boolean dead;
+    private boolean inRound;
+
+    public static Runner of(Player p) {
+    }
+
+    public void giveKey() {
+        this.keys += 1;
+        this.extracted = false;
+    }
+
+    public void queueFromGold() {
+        if (block(BlockPos.here().up(-1)) == Blocks.GOLD_BLOCK) {
+            this.inRound = true;
+        }
+    }
+
+    public void tickHold(Region extract) {
+        if (!this.inRound || this.extracted || this.dead) {
+            return;
+        }
+        if (this.keys >= 1 && Player.self().in(extract)) {
+            this.hold += 1;
+            if (this.hold >= 60) {
+                this.extracted = true;
+                Player.self().gamemode(GameMode.SPECTATOR);
+                title(Player.self(), Title.TITLE, "撤离成功");
+            }
+        } else {
+            this.hold = 0;
+        }
+    }
+}
