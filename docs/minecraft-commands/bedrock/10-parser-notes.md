@@ -7,6 +7,7 @@
 3. Implement `/execute` as a **recursive** chain (`executechainedoption_0`), depth-first semantics at **runtime**, not only parse time.
 4. JSON `rawtext` + give `components`.
 5. Remaining roots from the 82-command list; reject anything else (including Java-only verbs).
+6. When emitting a map, also emit **hosts**: `functions/tick.json`, optional `dialogue/*.json`, and never Java `tick.json` tags. See [`gameplay/`](gameplay/README.md).
 
 ## Tests that must exist
 
@@ -18,6 +19,7 @@
 - `tellraw @a {"rawtext":[{"text":"x"}]}` parses; Java component without `rawtext` should fail unless you explicitly accept a compatibility mode.
 - `allowlist` parses; `whitelist` does not (Java).
 - `xp` is the Bedrock root (Java’s primary root is `experience` with alias `xp`).
+- Example pack `examples/bedrock-metro-escape/**/*.mcfunction` uses only Bedrock roots (see `tools/check_command_docs.py`).
 
 ## `/help`
 

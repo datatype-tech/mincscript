@@ -2,6 +2,8 @@
 
 This directory is the **implementation spec** for MincScript’s Minecraft command surface. It is not a player cheat sheet. It covers the full grammar needed to parse, validate, and emit every current slash command on both editions, including `/execute` chains, selectors, SNBT/JSON, scoreboards, and inventory/data mutation.
 
+Bedrock commands also form a **game runtime** (tick.json, scoreboard FSM, tags, `hasitem`, structure reset). See [`bedrock/gameplay/`](bedrock/gameplay/README.md) and the pack [`examples/bedrock-metro-escape/`](../../examples/bedrock-metro-escape/).
+
 ## Directories
 
 | Path | Edition | Source of truth |

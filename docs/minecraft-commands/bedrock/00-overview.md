@@ -12,6 +12,7 @@ Official primer (minecraft.net) + Creator intro:
 - Command blocks need cheats + operator.
 - Chat commands start with `/`. Tab completes syntax.
 - Functions live in behavior packs; `/reload` reloads functions and scripts.
+- A saved function does nothing until an **execution host** runs it (`tick.json`, command block, NPC, `/schedule`, chat). See [`gameplay/00-save-and-execute.md`](gameplay/00-save-and-execute.md).
 
 ## Permission labels in the official files
 

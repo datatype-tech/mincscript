@@ -49,3 +49,5 @@ script <debugger subcommands>
 ## `/function`
 
 Runs `functions/<path>.mcfunction` in a behavior pack. **No** `{macros}` argument. `/schedule` exists with Bedrock-specific `on_area_loaded` vs time forms — see official `schedule.md`.
+
+**Saving vs running** (tick.json origin, command-block chunk unload, `structure save disk`, 10k function cap, 地铁逃生 FSM) is documented in [`gameplay/00-save-and-execute.md`](gameplay/00-save-and-execute.md).

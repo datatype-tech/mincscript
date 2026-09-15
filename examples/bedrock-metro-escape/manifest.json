@@ -1,0 +1,17 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "metro_escape_example",
+    "description": "mincscript: Bedrock subway-escape command FSM (tick.json executes)",
+    "uuid": "7c3e9a12-4b8f-4d21-9e6a-1f0c8b7d2a55",
+    "version": [1, 0, 0],
+    "min_engine_version": [1, 21, 0]
+  },
+  "modules": [
+    {
+      "type": "data",
+      "uuid": "3d91f0e8-6a47-4c15-b2e9-8a1d5c4f7b03",
+      "version": [1, 0, 0]
+    }
+  ]
+}

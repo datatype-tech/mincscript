@@ -1,0 +1,27 @@
+{
+  "format_version": "1.17",
+  "minecraft:npc_dialogue": {
+    "scenes": [
+      {
+        "scene_tag": "metro_queue",
+        "npc_name": "男团接待",
+        "text": "金块开始匹配，或按按钮排队。搜金锭钥匙，到撤离点站满三秒。",
+        "buttons": [
+          {
+            "name": "排队",
+            "commands": [
+              "/tag @initiator add queued",
+              "/tellraw @initiator {\"rawtext\":[{\"text\":\"§a已加入匹配\"}]}"
+            ]
+          },
+          {
+            "name": "开始对局",
+            "commands": [
+              "/function metro/match_start"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,5 +1,7 @@
 # Bedrock Edition grammar index
 
+**Gameplay (how these commands ship a map):** [gameplay/](gameplay/README.md) — save vs execute, FSM, 地铁逃生 architecture, combinable recipes. Executable pack: [`examples/bedrock-metro-escape/`](../../../examples/bedrock-metro-escape/).
+
 1. [Overview](00-overview.md)
 2. [Lexing](01-lexing.md)
 3. [Argument types](02-argument-types.md)
@@ -11,6 +13,7 @@
 9. [Inventory](08-inventory.md)
 10. [World / structure / camera / script](09-world-and-ui.md)
 11. [Parser checklist](10-parser-notes.md)
+12. [Gameplay system](gameplay/README.md)
 
 Generated:
 
