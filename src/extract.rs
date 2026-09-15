@@ -1,6 +1,6 @@
 use crate::ast::{
-    CompilationUnit, ContainerKind, Expr, FieldDef, Item, Member, PlaceStmt, Stmt, TypeRef,
-    UnaryOp, WorldClause,
+    CompilationUnit, ContainerKind, Expr, ExprKind, FieldDef, Item, Member, PlaceStmt, Stmt,
+    StmtKind, TypeRef, UnaryOp, WorldClause,
 };
 
 /// MINCB-facing facts extracted from a parsed compilation unit (or merged project).
@@ -383,12 +383,12 @@ pub fn extract_binary_info_with_revision(
 fn collect_labels(stmts: &[Stmt]) -> Vec<String> {
     let mut out = Vec::new();
     for stmt in stmts {
-        match stmt {
-            Stmt::Label(name) => out.push(name.clone()),
-            Stmt::Annotated { inner, .. } => {
+        match &stmt.kind {
+            StmtKind::Label(name) => out.push(name.clone()),
+            StmtKind::Annotated { inner, .. } => {
                 out.extend(collect_labels(std::slice::from_ref(inner)))
             }
-            Stmt::If {
+            StmtKind::If {
                 then_body,
                 else_body,
                 ..
@@ -398,10 +398,10 @@ fn collect_labels(stmts: &[Stmt]) -> Vec<String> {
                     out.extend(collect_labels(e));
                 }
             }
-            Stmt::Foreach { body, .. } | Stmt::Context { body, .. } => {
+            StmtKind::Foreach { body, .. } | StmtKind::Context { body, .. } => {
                 out.extend(collect_labels(body));
             }
-            Stmt::Switch { arms, default, .. } => {
+            StmtKind::Switch { arms, default, .. } => {
                 for (_, body) in arms {
                     out.extend(collect_labels(body));
                 }
@@ -424,9 +424,9 @@ fn kind_of_field(field: &FieldDef) -> Option<SymbolKind> {
 }
 
 pub fn expr_int(expr: &Expr) -> Option<i64> {
-    match expr {
-        Expr::Int(n) => Some(*n),
-        Expr::Unary {
+    match &expr.kind {
+        ExprKind::Int(n) => Some(*n),
+        ExprKind::Unary {
             op: UnaryOp::Neg,
             expr,
         } => expr_int(expr).map(|n| -n),

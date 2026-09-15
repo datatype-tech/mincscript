@@ -62,6 +62,7 @@ pub struct ClassDef {
     pub annotations: Vec<Annotation>,
     pub vis: Visibility,
     pub name: String,
+    pub name_span: Span,
     pub extends: Option<String>,
     pub members: Vec<Member>,
 }
@@ -79,6 +80,7 @@ pub struct FieldDef {
     pub ty: TypeRef,
     pub name: String,
     pub init: Option<Expr>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -90,6 +92,7 @@ pub struct MethodDef {
     pub name: String,
     pub params: Vec<Param>,
     pub body: Vec<Stmt>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,7 +242,19 @@ pub struct SlotFill {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Stmt {
+pub struct Stmt {
+    pub span: Span,
+    pub kind: StmtKind,
+}
+
+impl Stmt {
+    pub fn new(span: Span, kind: StmtKind) -> Self {
+        Self { span, kind }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StmtKind {
     Annotated {
         annotations: Vec<Annotation>,
         inner: Box<Stmt>,
@@ -299,7 +314,19 @@ pub enum AssignOp {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expr {
+pub struct Expr {
+    pub span: Span,
+    pub kind: ExprKind,
+}
+
+impl Expr {
+    pub fn new(span: Span, kind: ExprKind) -> Self {
+        Self { span, kind }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExprKind {
     Int(i64),
     String(String),
     Bool(bool),
@@ -326,6 +353,7 @@ pub enum Expr {
         ty: TypeRef,
         args: Vec<Expr>,
     },
+    Null,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

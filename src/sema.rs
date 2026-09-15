@@ -1,6 +1,8 @@
 //! Semantic checks: private fields/methods, locals, and edition-aware builtins.
 
-use crate::ast::{CompilationUnit, Expr, Item, Member, Stmt, TypeRef, Visibility};
+use crate::ast::{
+    CompilationUnit, Expr, ExprKind, Item, Member, Stmt, StmtKind, TypeRef, Visibility,
+};
 use crate::config::{Edition, MincConfig};
 use crate::diagnostic::Diagnostic;
 
@@ -215,8 +217,8 @@ fn check_stmts(
     bedrock_only: bool,
 ) {
     for stmt in stmts {
-        match stmt {
-            Stmt::Annotated { inner, .. } => {
+        match &stmt.kind {
+            StmtKind::Annotated { inner, .. } => {
                 check_stmts(
                     current_class,
                     std::slice::from_ref(inner.as_ref()),
@@ -231,7 +233,7 @@ fn check_stmts(
                     bedrock_only,
                 );
             }
-            Stmt::Local { ty, name, init } => {
+            StmtKind::Local { ty, name, init } => {
                 if let Some(init) = init {
                     check_expr(
                         current_class,
@@ -249,7 +251,7 @@ fn check_stmts(
                 }
                 locals.push((name.clone(), ty.clone()));
             }
-            Stmt::Foreach {
+            StmtKind::Foreach {
                 ty,
                 name,
                 iter,
@@ -284,7 +286,7 @@ fn check_stmts(
                 );
                 locals.pop();
             }
-            Stmt::If {
+            StmtKind::If {
                 cond,
                 then_body,
                 else_body,
@@ -331,7 +333,7 @@ fn check_stmts(
                     );
                 }
             }
-            Stmt::Context { prefixes, body } => {
+            StmtKind::Context { prefixes, body } => {
                 for prefix in prefixes {
                     match prefix {
                         crate::ast::ContextPrefix::As(e)
@@ -368,7 +370,7 @@ fn check_stmts(
                     bedrock_only,
                 );
             }
-            Stmt::Switch {
+            StmtKind::Switch {
                 expr,
                 arms,
                 default,
@@ -417,7 +419,7 @@ fn check_stmts(
                     );
                 }
             }
-            Stmt::Return(Some(expr)) | Stmt::Expr(expr) => {
+            StmtKind::Return(Some(expr)) | StmtKind::Expr(expr) => {
                 check_expr(
                     current_class,
                     expr,
@@ -432,7 +434,7 @@ fn check_stmts(
                     bedrock_only,
                 );
             }
-            Stmt::Assign { target, value, .. } => {
+            StmtKind::Assign { target, value, .. } => {
                 check_expr(
                     current_class,
                     target,
@@ -459,7 +461,7 @@ fn check_stmts(
                     java_only,
                     bedrock_only,
                 );
-                if let Expr::Field { base, name } = target {
+                if let ExprKind::Field { base, name } = &target.kind {
                     if let Some(owner) =
                         type_of(current_class, base, fields, methods, classes, enums, locals)
                     {
@@ -467,7 +469,7 @@ fn check_stmts(
                     }
                 }
             }
-            Stmt::Return(None) | Stmt::Label(_) => {}
+            StmtKind::Return(None) | StmtKind::Label(_) => {}
         }
     }
 }
@@ -486,8 +488,8 @@ fn check_expr(
     java_only: bool,
     bedrock_only: bool,
 ) {
-    match expr {
-        Expr::Unary { expr, .. } => check_expr(
+    match &expr.kind {
+        ExprKind::Unary { expr, .. } => check_expr(
             current_class,
             expr,
             fields,
@@ -500,7 +502,7 @@ fn check_expr(
             java_only,
             bedrock_only,
         ),
-        Expr::Binary { op, lhs, rhs, .. } => {
+        ExprKind::Binary { op, lhs, rhs, .. } => {
             check_expr(
                 current_class,
                 lhs,
@@ -528,8 +530,8 @@ fn check_expr(
                 bedrock_only,
             );
             if *op == crate::ast::BinOp::Add
-                && (matches!(lhs.as_ref(), Expr::String(_))
-                    || matches!(rhs.as_ref(), Expr::String(_)))
+                && (matches!(&lhs.kind, ExprKind::String(_))
+                    || matches!(&rhs.kind, ExprKind::String(_)))
                 && !(is_string_const(lhs) && is_string_const(rhs))
             {
                 errors.push(Diagnostic::new(
@@ -538,7 +540,7 @@ fn check_expr(
                 ));
             }
         }
-        Expr::Call { callee, args } => {
+        ExprKind::Call { callee, args } => {
             check_expr(
                 current_class,
                 callee,
@@ -567,7 +569,7 @@ fn check_expr(
                     bedrock_only,
                 );
             }
-            if let Expr::Ident(name) = callee.as_ref() {
+            if let ExprKind::Ident(name) = &callee.kind {
                 if name == "random" {
                     if let Some(cfg) = config {
                         if cfg.edition == Edition::Java {
@@ -585,7 +587,7 @@ fn check_expr(
                     ));
                 }
             }
-            if let Expr::Field { base, name } = callee.as_ref() {
+            if let ExprKind::Field { base, name } = &callee.kind {
                 if name == "data" {
                     if let Some(cfg) = config {
                         if cfg.edition == Edition::Java {
@@ -596,7 +598,7 @@ fn check_expr(
                         }
                     }
                 }
-                let owner = if let Expr::Ident(class) = base.as_ref() {
+                let owner = if let ExprKind::Ident(class) = &base.kind {
                     Some(class.clone())
                 } else {
                     type_of(current_class, base, fields, methods, classes, enums, locals)
@@ -652,7 +654,7 @@ fn check_expr(
                 }
             }
         }
-        Expr::Field { base, name } => {
+        ExprKind::Field { base, name } => {
             check_expr(
                 current_class,
                 base,
@@ -672,7 +674,7 @@ fn check_expr(
                 deny_private_field(current_class, &owner, name, fields, errors);
             }
         }
-        Expr::New { args, .. } => {
+        ExprKind::New { args, .. } => {
             for arg in args {
                 check_expr(
                     current_class,
@@ -702,15 +704,15 @@ fn type_of(
     enums: &[String],
     locals: &[(String, TypeRef)],
 ) -> Option<String> {
-    match expr {
-        Expr::This => {
+    match &expr.kind {
+        ExprKind::This => {
             if current_class.is_empty() {
                 None
             } else {
                 Some(current_class.to_string())
             }
         }
-        Expr::Ident(name) => {
+        ExprKind::Ident(name) => {
             if let Some((_, ty)) = locals.iter().find(|(n, _)| n == name) {
                 return named_type(ty);
             }
@@ -722,8 +724,8 @@ fn type_of(
             }
             None
         }
-        Expr::Field { base, name } => {
-            if let Expr::Ident(class) = base.as_ref() {
+        ExprKind::Field { base, name } => {
+            if let ExprKind::Ident(class) = &base.kind {
                 if classes.iter().any(|c| c == class) || fields.iter().any(|f| f.class == *class) {
                     if let Some(f) = fields.iter().find(|f| f.class == *class && f.name == *name) {
                         return named_type(&f.ty);
@@ -744,17 +746,17 @@ fn type_of(
             }
             None
         }
-        Expr::Call { callee, .. } => {
-            if let Expr::Field { base, name } = callee.as_ref() {
+        ExprKind::Call { callee, .. } => {
+            if let ExprKind::Field { base, name } = &callee.kind {
                 if name == "of" {
-                    if let Expr::Ident(class) = base.as_ref() {
+                    if let ExprKind::Ident(class) = &base.kind {
                         if classes.iter().any(|c| c == class) {
                             return Some(class.clone());
                         }
                     }
                 }
-                let owner = match base.as_ref() {
-                    Expr::Ident(class)
+                let owner = match &base.kind {
+                    ExprKind::Ident(class)
                         if methods.iter().any(|m| m.class == *class)
                             || classes.iter().any(|c| c == class)
                             || matches!(
@@ -780,7 +782,7 @@ fn type_of(
                     return builtin_return(&owner, name);
                 }
             }
-            if let Expr::Ident(name) = callee.as_ref() {
+            if let ExprKind::Ident(name) = &callee.kind {
                 return match name.as_str() {
                     "block" => Some("Block".into()),
                     "title" | "tellraw" => Some("void".into()),
@@ -790,7 +792,7 @@ fn type_of(
             }
             None
         }
-        Expr::New { ty, .. } => named_type(ty),
+        ExprKind::New { ty, .. } => named_type(ty),
         _ => None,
     }
 }
@@ -814,9 +816,9 @@ fn builtin_return(owner: &str, name: &str) -> Option<String> {
 }
 
 fn is_string_const(expr: &Expr) -> bool {
-    match expr {
-        Expr::String(_) => true,
-        Expr::Binary {
+    match &expr.kind {
+        ExprKind::String(_) => true,
+        ExprKind::Binary {
             op: crate::ast::BinOp::Add,
             lhs,
             rhs,

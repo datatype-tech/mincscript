@@ -1,7 +1,7 @@
 use crate::ast::{
     Annotation, AssignOp, BinOp, ChainDef, ClassDef, CompilationUnit, ContainerKind, ContextPrefix,
-    EnumDef, Expr, FieldDef, Item, Member, MethodDef, Param, PathName, PlaceDef, PlaceStmt,
-    SlotFill, Stmt, TypeRef, UnaryOp, Visibility, WorldClause, WorldDef,
+    EnumDef, Expr, ExprKind, FieldDef, Item, Member, MethodDef, Param, PathName, PlaceDef,
+    PlaceStmt, SlotFill, Stmt, StmtKind, TypeRef, UnaryOp, Visibility, WorldClause, WorldDef,
 };
 use crate::diagnostic::Diagnostic;
 use crate::span::Span;
@@ -95,6 +95,37 @@ impl Parser {
             .unwrap_or_else(|| self.eoi.clone())
     }
 
+    fn prev_end(&self) -> usize {
+        if self.pos == 0 {
+            return self.eoi.start;
+        }
+        self.tokens
+            .get(self.pos - 1)
+            .map(|(_, s)| s.end)
+            .unwrap_or(self.eoi.end)
+    }
+
+    fn expr(&self, start: usize, kind: ExprKind) -> Expr {
+        Expr::new(start..self.prev_end(), kind)
+    }
+
+    fn bin(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
+        let start = lhs.span.start;
+        let end = rhs.span.end;
+        Expr::new(
+            start..end,
+            ExprKind::Binary {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            },
+        )
+    }
+
+    fn stmt(&self, start: usize, kind: StmtKind) -> Stmt {
+        Stmt::new(start..self.prev_end(), kind)
+    }
+
     fn bump(&mut self) -> Option<(Token, Span)> {
         if self.pos < self.tokens.len() {
             let item = self.tokens[self.pos].clone();
@@ -179,6 +210,22 @@ impl Parser {
 
         let vis = self.parse_vis();
         self.skip_class_modifiers();
+        if matches!(
+            self.peek(),
+            Some(
+                Token::Interface
+                    | Token::Abstract
+                    | Token::Synchronized
+                    | Token::Try
+                    | Token::Catch
+            )
+        ) {
+            self.error(format!(
+                "`{}` is not valid in MincScript v1",
+                self.peek().unwrap()
+            ));
+            return None;
+        }
         if self.peek() == Some(&Token::Enum) {
             return Some(Item::Enum(self.parse_enum(vis)));
         }
@@ -268,6 +315,13 @@ impl Parser {
             }
             Some(Token::IntKw) => {
                 self.pos += 1;
+                if self.peek() == Some(&Token::LBracket) {
+                    self.error("`int[]` is not valid (no arrays; use scores or chests)");
+                    self.pos += 1;
+                    if self.peek() == Some(&Token::RBracket) {
+                        self.pos += 1;
+                    }
+                }
                 TypeRef::Int
             }
             Some(Token::BooleanKw) => {
@@ -291,6 +345,7 @@ impl Parser {
 
     fn parse_class(&mut self, annotations: Vec<Annotation>, vis: Visibility) -> ClassDef {
         self.expect(Token::Class, "`class`");
+        let name_span = self.peek_span();
         let name = self.expect_ident();
         let extends = if self.peek() == Some(&Token::Extends) {
             self.pos += 1;
@@ -311,12 +366,14 @@ impl Parser {
             annotations,
             vis,
             name,
+            name_span,
             extends,
             members,
         }
     }
 
     fn parse_member(&mut self) -> Member {
+        let start = self.peek_span().start;
         let annotations = self.parse_annotations();
         let vis = self.parse_vis();
         let is_static = if self.peek() == Some(&Token::Static) {
@@ -357,6 +414,7 @@ impl Parser {
                 name,
                 params,
                 body,
+                span: start..self.prev_end(),
             })
         } else {
             let init = if self.peek() == Some(&Token::Eq) {
@@ -372,6 +430,7 @@ impl Parser {
                 ty,
                 name,
                 init,
+                span: start..self.prev_end(),
             })
         }
     }
@@ -862,6 +921,7 @@ impl Parser {
     }
 
     fn parse_local(&mut self) -> Stmt {
+        let start = self.peek_span().start;
         let ty = self.parse_type();
         let name = self.bump_name();
         let init = if self.peek() == Some(&Token::Eq) {
@@ -871,17 +931,21 @@ impl Parser {
             None
         };
         self.expect(Token::Semicolon, "`;` after local");
-        Stmt::Local { ty, name, init }
+        self.stmt(start, StmtKind::Local { ty, name, init })
     }
 
     fn parse_stmt(&mut self) -> Stmt {
+        let start = self.peek_span().start;
         if self.peek() == Some(&Token::At) {
             let annotations = self.parse_annotations();
             let inner = self.parse_stmt();
-            return Stmt::Annotated {
-                annotations,
-                inner: Box::new(inner),
-            };
+            return self.stmt(
+                start,
+                StmtKind::Annotated {
+                    annotations,
+                    inner: Box::new(inner),
+                },
+            );
         }
         if self.looks_like_local() {
             return self.parse_local();
@@ -890,6 +954,11 @@ impl Parser {
             Some(Token::If) => self.parse_if(),
             Some(Token::Foreach) => self.parse_foreach(),
             Some(Token::Switch) => self.parse_switch(),
+            Some(Token::Try) => {
+                self.error("`try`/`catch` is not valid in MincScript");
+                self.pos += 1;
+                self.stmt(start, StmtKind::Return(None))
+            }
             Some(Token::Return) => {
                 self.pos += 1;
                 let expr = if self.peek() == Some(&Token::Semicolon) {
@@ -898,13 +967,13 @@ impl Parser {
                     Some(self.parse_expr())
                 };
                 self.expect(Token::Semicolon, "`;`");
-                Stmt::Return(expr)
+                self.stmt(start, StmtKind::Return(expr))
             }
             Some(Token::Label) => {
                 self.pos += 1;
                 let name = self.expect_ident();
                 self.expect(Token::Semicolon, "`;`");
-                Stmt::Label(name)
+                self.stmt(start, StmtKind::Label(name))
             }
             Some(Token::As | Token::AtKw | Token::Facing | Token::Anchored | Token::Align) => {
                 self.parse_context()
@@ -915,14 +984,17 @@ impl Parser {
                     self.pos += 1;
                     let value = self.parse_expr();
                     self.expect(Token::Semicolon, "`;`");
-                    Stmt::Assign {
-                        target: expr,
-                        op,
-                        value,
-                    }
+                    self.stmt(
+                        start,
+                        StmtKind::Assign {
+                            target: expr,
+                            op,
+                            value,
+                        },
+                    )
                 } else {
                     self.expect(Token::Semicolon, "`;`");
-                    Stmt::Expr(expr)
+                    self.stmt(start, StmtKind::Expr(expr))
                 }
             }
         }
@@ -941,6 +1013,7 @@ impl Parser {
     }
 
     fn parse_if(&mut self) -> Stmt {
+        let start = self.peek_span().start;
         self.expect(Token::If, "`if`");
         self.expect(Token::LParen, "`(`");
         let cond = self.parse_expr();
@@ -956,14 +1029,18 @@ impl Parser {
         } else {
             None
         };
-        Stmt::If {
-            cond,
-            then_body,
-            else_body,
-        }
+        self.stmt(
+            start,
+            StmtKind::If {
+                cond,
+                then_body,
+                else_body,
+            },
+        )
     }
 
     fn parse_foreach(&mut self) -> Stmt {
+        let start = self.peek_span().start;
         self.expect(Token::Foreach, "`foreach`");
         self.expect(Token::LParen, "`(`");
         let ty = self.parse_type();
@@ -972,15 +1049,19 @@ impl Parser {
         let iter = self.parse_expr();
         self.expect(Token::RParen, "`)`");
         let body = self.parse_block();
-        Stmt::Foreach {
-            ty,
-            name,
-            iter,
-            body,
-        }
+        self.stmt(
+            start,
+            StmtKind::Foreach {
+                ty,
+                name,
+                iter,
+                body,
+            },
+        )
     }
 
     fn parse_switch(&mut self) -> Stmt {
+        let start = self.peek_span().start;
         self.expect(Token::Switch, "`switch`");
         self.expect(Token::LParen, "`(`");
         let expr = self.parse_expr();
@@ -1021,14 +1102,18 @@ impl Parser {
             }
         }
         self.expect(Token::RBrace, "`}`");
-        Stmt::Switch {
-            expr,
-            arms,
-            default,
-        }
+        self.stmt(
+            start,
+            StmtKind::Switch {
+                expr,
+                arms,
+                default,
+            },
+        )
     }
 
     fn parse_context(&mut self) -> Stmt {
+        let start = self.peek_span().start;
         let mut prefixes = Vec::new();
         loop {
             match self.peek() {
@@ -1048,13 +1133,22 @@ impl Parser {
                         let y = self.parse_expr();
                         self.expect(Token::Comma, "`,`");
                         let z = self.parse_expr();
-                        Expr::Call {
-                            callee: Box::new(Expr::Field {
-                                base: Box::new(Expr::Ident("BlockPos".into())),
-                                name: "of".into(),
-                            }),
-                            args: vec![first, y, z],
-                        }
+                        Expr::new(
+                            first.span.start..z.span.end,
+                            ExprKind::Call {
+                                callee: Box::new(Expr::new(
+                                    first.span.clone(),
+                                    ExprKind::Field {
+                                        base: Box::new(Expr::new(
+                                            first.span.clone(),
+                                            ExprKind::Ident("BlockPos".into()),
+                                        )),
+                                        name: "of".into(),
+                                    },
+                                )),
+                                args: vec![first, y, z],
+                            },
+                        )
                     } else {
                         first
                     };
@@ -1086,7 +1180,7 @@ impl Parser {
             }
         }
         let body = self.parse_block();
-        Stmt::Context { prefixes, body }
+        self.stmt(start, StmtKind::Context { prefixes, body })
     }
 
     fn bump_name(&mut self) -> String {
@@ -1119,11 +1213,7 @@ impl Parser {
         if self.peek() == Some(&Token::In) {
             self.pos += 1;
             let rhs = self.parse_or();
-            lhs = Expr::Binary {
-                op: BinOp::In,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
+            lhs = Self::bin(BinOp::In, lhs, rhs);
         }
         lhs
     }
@@ -1133,11 +1223,7 @@ impl Parser {
         while self.peek() == Some(&Token::OrOr) {
             self.pos += 1;
             let rhs = self.parse_and();
-            lhs = Expr::Binary {
-                op: BinOp::Or,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
+            lhs = Self::bin(BinOp::Or, lhs, rhs);
         }
         lhs
     }
@@ -1147,11 +1233,7 @@ impl Parser {
         while self.peek() == Some(&Token::AndAnd) {
             self.pos += 1;
             let rhs = self.parse_cmp();
-            lhs = Expr::Binary {
-                op: BinOp::And,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
+            lhs = Self::bin(BinOp::And, lhs, rhs);
         }
         lhs
     }
@@ -1170,11 +1252,7 @@ impl Parser {
         if let Some(op) = op {
             self.pos += 1;
             let rhs = self.parse_range();
-            lhs = Expr::Binary {
-                op,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
+            lhs = Self::bin(op, lhs, rhs);
         }
         lhs
     }
@@ -1184,11 +1262,7 @@ impl Parser {
         if self.peek() == Some(&Token::DotDot) {
             self.pos += 1;
             let rhs = self.parse_sum();
-            lhs = Expr::Binary {
-                op: BinOp::Range,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
+            lhs = Self::bin(BinOp::Range, lhs, rhs);
         }
         lhs
     }
@@ -1203,11 +1277,7 @@ impl Parser {
             };
             self.pos += 1;
             let rhs = self.parse_product();
-            lhs = Expr::Binary {
-                op,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
+            lhs = Self::bin(op, lhs, rhs);
         }
         lhs
     }
@@ -1223,11 +1293,7 @@ impl Parser {
             };
             self.pos += 1;
             let rhs = self.parse_unary();
-            lhs = Expr::Binary {
-                op,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            };
+            lhs = Self::bin(op, lhs, rhs);
         }
         lhs
     }
@@ -1235,18 +1301,28 @@ impl Parser {
     fn parse_unary(&mut self) -> Expr {
         match self.peek() {
             Some(Token::Minus) => {
+                let start = self.peek_span().start;
                 self.pos += 1;
-                Expr::Unary {
-                    op: UnaryOp::Neg,
-                    expr: Box::new(self.parse_unary()),
-                }
+                let expr = self.parse_unary();
+                self.expr(
+                    start,
+                    ExprKind::Unary {
+                        op: UnaryOp::Neg,
+                        expr: Box::new(expr),
+                    },
+                )
             }
             Some(Token::Bang) => {
+                let start = self.peek_span().start;
                 self.pos += 1;
-                Expr::Unary {
-                    op: UnaryOp::Not,
-                    expr: Box::new(self.parse_unary()),
-                }
+                let expr = self.parse_unary();
+                self.expr(
+                    start,
+                    ExprKind::Unary {
+                        op: UnaryOp::Not,
+                        expr: Box::new(expr),
+                    },
+                )
             }
             _ => self.parse_postfix(),
         }
@@ -1259,10 +1335,14 @@ impl Parser {
                 Some(Token::Dot) => {
                     self.pos += 1;
                     let name = self.bump_name();
-                    expr = Expr::Field {
-                        base: Box::new(expr),
-                        name,
-                    };
+                    let start = expr.span.start;
+                    expr = self.expr(
+                        start,
+                        ExprKind::Field {
+                            base: Box::new(expr),
+                            name,
+                        },
+                    );
                 }
                 Some(Token::LParen) => {
                     self.pos += 1;
@@ -1278,10 +1358,14 @@ impl Parser {
                         }
                     }
                     self.expect(Token::RParen, "`)`");
-                    expr = Expr::Call {
-                        callee: Box::new(expr),
-                        args,
-                    };
+                    let start = expr.span.start;
+                    expr = self.expr(
+                        start,
+                        ExprKind::Call {
+                            callee: Box::new(expr),
+                            args,
+                        },
+                    );
                 }
                 _ => break,
             }
@@ -1290,14 +1374,16 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Expr {
+        let start = self.peek_span().start;
         match self.bump() {
-            Some((Token::Int(n), _)) => Expr::Int(n),
-            Some((Token::String(s), _)) => Expr::String(s),
-            Some((Token::True, _)) => Expr::Bool(true),
-            Some((Token::False, _)) => Expr::Bool(false),
-            Some((Token::This, _)) => Expr::This,
-            Some((Token::Ident(name), _)) => Expr::Ident(name),
-            Some((Token::New, _)) => {
+            Some((Token::Int(n), span)) => Expr::new(span, ExprKind::Int(n)),
+            Some((Token::String(s), span)) => Expr::new(span, ExprKind::String(s)),
+            Some((Token::True, span)) => Expr::new(span, ExprKind::Bool(true)),
+            Some((Token::False, span)) => Expr::new(span, ExprKind::Bool(false)),
+            Some((Token::This, span)) => Expr::new(span, ExprKind::This),
+            Some((Token::Null, span)) => Expr::new(span, ExprKind::Null),
+            Some((Token::Ident(name), span)) => Expr::new(span, ExprKind::Ident(name)),
+            Some((Token::New, span)) => {
                 let ty = self.parse_type();
                 self.expect(Token::LParen, "`(` after `new`");
                 let mut args = Vec::new();
@@ -1312,10 +1398,9 @@ impl Parser {
                     }
                 }
                 self.expect(Token::RParen, "`)`");
-                Expr::New { ty, args }
+                self.expr(span.start, ExprKind::New { ty, args })
             }
-            Some((Token::Cmd, _)) => {
-                // cmd("...")
+            Some((Token::Cmd, span)) => {
                 self.expect(Token::LParen, "`(`");
                 let s = match self.bump() {
                     Some((Token::String(s), _)) => s,
@@ -1325,10 +1410,13 @@ impl Parser {
                     }
                 };
                 self.expect(Token::RParen, "`)`");
-                Expr::Call {
-                    callee: Box::new(Expr::Ident("cmd".into())),
-                    args: vec![Expr::String(s)],
-                }
+                self.expr(
+                    span.start,
+                    ExprKind::Call {
+                        callee: Box::new(Expr::new(span.clone(), ExprKind::Ident("cmd".into()))),
+                        args: vec![Expr::new(span, ExprKind::String(s))],
+                    },
+                )
             }
             Some((Token::LParen, _)) => {
                 let expr = self.parse_expr();
@@ -1337,7 +1425,7 @@ impl Parser {
             }
             _ => {
                 self.error("expected expression");
-                Expr::Int(0)
+                self.expr(start, ExprKind::Int(0))
             }
         }
     }

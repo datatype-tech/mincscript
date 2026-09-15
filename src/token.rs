@@ -120,6 +120,18 @@ pub enum Token {
     Final,
     #[token("extends", priority = 2)]
     Extends,
+    #[token("null", priority = 2)]
+    Null,
+    #[token("try", priority = 2)]
+    Try,
+    #[token("catch", priority = 2)]
+    Catch,
+    #[token("interface", priority = 2)]
+    Interface,
+    #[token("abstract", priority = 2)]
+    Abstract,
+    #[token("synchronized", priority = 2)]
+    Synchronized,
 
     #[token("==")]
     EqEq,
@@ -288,6 +300,12 @@ impl fmt::Display for Token {
             Token::Replace => "replace",
             Token::Final => "final",
             Token::Extends => "extends",
+            Token::Null => "null",
+            Token::Try => "try",
+            Token::Catch => "catch",
+            Token::Interface => "interface",
+            Token::Abstract => "abstract",
+            Token::Synchronized => "synchronized",
             Token::EqEq => "==",
             Token::NotEq => "!=",
             Token::Le => "<=",
