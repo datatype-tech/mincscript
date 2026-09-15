@@ -1,0 +1,24 @@
+pack demo.kit;
+
+public class Kit {
+    public static int opened;
+
+    public static void open() {
+        temp int flash = 3;
+        temp Item key = Items.GOLD_INGOT.count(1);
+        List<Item> loot = List.of(
+            Items.GOLD_INGOT.count(1),
+            Items.IRON_INGOT.count(4)
+        );
+        foreach (Item it : loot) {
+            give(Players.all(), it);
+        }
+        give(Players.all(), key);
+        Kit.opened = flash;
+        title(Players.all(), Title.TITLE, "补给已刷新");
+        tellraw(Players.all(), Text.raw("拿走金锭"));
+        effect(Players.all(), "speed", 10, 1);
+        run "say kit open";
+        /kill @e[type=item];
+    }
+}

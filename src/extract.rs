@@ -171,16 +171,6 @@ pub fn extract_binary_info_with_revision(
         kind: SymbolKind::Objective,
         qualified: format!("{pack}.#mt"),
     });
-    symbols.push(Symbol {
-        id: "#t0".into(),
-        kind: SymbolKind::FakePlayer,
-        qualified: format!("{pack}.#t0"),
-    });
-    symbols.push(Symbol {
-        id: "#t1".into(),
-        kind: SymbolKind::FakePlayer,
-        qualified: format!("{pack}.#t1"),
-    });
     for (qualified, kind) in field_names {
         let id = match kind {
             SymbolKind::Objective => {

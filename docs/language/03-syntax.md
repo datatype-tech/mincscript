@@ -1,6 +1,6 @@
 # Syntax
 
-MincScript looks like a small Java 11: braces, `class`, `public`/`private`, `if`/`else`, `foreach`, annotations. It is **not** a JVM language. There is no `new` for entities, no `null`, no generics (except the built-in `Seq<T>` selector type), no exceptions.
+MincScript looks like a small Java 11: braces, `class`, `public`/`private`, `if`/`else`, `foreach`, annotations. It is **not** a JVM language. There is no `new` for entities, no `null`, no runtime generics (except the built-in `Seq<T>` selector type and compile-time `List<T>`), no exceptions.
 
 File encoding: UTF-8. Comments: `//` and `/* */`. Identifiers: Unicode letters, `$` not used.
 
@@ -36,6 +36,8 @@ import metro.escape.Runner;
 | `Item` | item id + optional count / data / components |
 | `Region` | two `BlockPos` or AABB / circle |
 | `Seq<T>` | selector, not a list |
+| `List<T>` | **compile-time** list (`List.of`); `foreach` unrolls. Not a heap array |
+| `temp T x` | one-shot local: inlined or `#tN mt` scratch then `reset`. Never a user objective |
 | `String` | **compile-time only** (titles, command fragments) |
 | enum types | `int` ordinal |
 
@@ -127,11 +129,14 @@ Items.GOLD_INGOT.data(0);                 // Bedrock aux; error on Java
 Items.DIAMOND_SWORD.component("item_lock", "{mode:lock_in_inventory}"); // edition-checked
 
 cmd("title @a title 地铁逃生");           // 整行原样，仍禁止前导以外的语法裂口
+run "say hello";                       // 一条语句 = 一条指令
+/say hi;
+give(Players.all(), Items.GOLD_INGOT.count(1));
 title(Players.all(), Title.TITLE, "地铁逃生");
 tellraw(Players.all(), Text.raw("§e撤离点已开启"));
 ```
 
-`title` / `tellraw` are builtins. On Bedrock, `tellraw` is `rawtext` JSON; on Java, text components. You write `Text.raw` / `Text.translatable`; the compiler splits.
+`title` / `tellraw` / `give` / `kill` / `effect` / `clear` / `playsound` / `particle` / `summon` / `setblock` / `xp` / `enchant` / `replaceItem` are builtins. The compiler prints **edition-correct** lines (Java `effect give` vs Bedrock `effect`, Java `item replace` vs Bedrock `replaceitem`, Java text components vs Bedrock `rawtext`). See [06 Tutorial](06-tutorial.md).
 
 ## Annotations (logic)
 
@@ -153,7 +158,8 @@ tellraw(Players.all(), Text.raw("§e撤离点已开启"));
 | `new Player()` | players are not allocated |
 | `null` | missing selector is `exists() == false` |
 | `try/catch` | no exceptions |
-| `int[]` / `List` | no arrays; use scores or chests |
+| `int[]` | no runtime arrays; compile-time `List.of` + `foreach` unroll, or scores / chests |
+| `List` as a heap type | `List<T>` exists only as `List.of(...)` unrolled at compile time |
 | `interface` / `abstract` | v2 |
 | `synchronized` | no |
 | `switch` on `String` | strings are compile-time; `switch` on `enum`/`int` is allowed |
@@ -178,4 +184,6 @@ switch (Match.phase) {
 | `p.teleport(pos)` | `teleport` | `teleport` |
 | `p.gamemode(ADVENTURE)` | `gamemode adventure` | `gamemode adventure` |
 
-Temps for complex expressions use reserved fake players `#t0`, `#t1` in a compiler objective `mt`. They are not user-visible types.
+Temps for complex **runtime** score expressions use reserved fake players `#t0`, `#t1` in a compiler objective `mt`, then `scoreboard players reset #tN mt`. They are not user-visible types and are not entered in the class objective table. User `temp` locals never become dummy objectives. Compile-time `List<T>` is unrolled, not stored.
+
+A full walkthrough with builtins, temps, lists, and the Java/Bedrock command split is [06 Tutorial](06-tutorial.md).

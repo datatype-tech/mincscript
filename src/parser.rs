@@ -51,6 +51,7 @@ fn is_punct(tok: &Token) -> bool {
 }
 
 struct Parser {
+    source: String,
     tokens: Vec<(Token, Span)>,
     pos: usize,
     eoi: Span,
@@ -59,13 +60,14 @@ struct Parser {
 
 /// Parse a token stream into a compilation unit.
 pub fn parse_tokens(
-    eoi: Span,
+    source: &str,
     tokens: Vec<(Token, Span)>,
 ) -> Result<CompilationUnit, Vec<Diagnostic>> {
     let mut parser = Parser {
+        source: source.to_string(),
         tokens,
         pos: 0,
-        eoi,
+        eoi: source.len()..source.len(),
         errors: Vec::new(),
     };
     let unit = parser.parse_unit();
@@ -332,12 +334,17 @@ impl Parser {
                 self.pos += 1;
                 TypeRef::Boolean
             }
-            Some(Token::Ident(name)) if name == "Seq" => {
+            Some(Token::Ident(name)) if name == "Seq" || name == "List" => {
+                let list = name == "List";
                 self.pos += 1;
                 self.expect(Token::Lt, "`<`");
                 let inner = self.parse_type();
                 self.expect(Token::Gt, "`>`");
-                TypeRef::Seq(Box::new(inner))
+                if list {
+                    TypeRef::List(Box::new(inner))
+                } else {
+                    TypeRef::Seq(Box::new(inner))
+                }
             }
             Some(Token::Ident(_)) => TypeRef::Named(self.parse_path()),
             _ => {
@@ -870,6 +877,9 @@ impl Parser {
                             | Token::Private
                             | Token::Pack
                             | Token::Import
+                            | Token::Temp
+                            | Token::Run
+                            | Token::Cmd
                     ) =>
             {
                 true
@@ -879,30 +889,37 @@ impl Parser {
     }
 
     fn looks_like_local(&self) -> bool {
-        let Some(type_len) = self.type_prefix_len() else {
+        let off = if self.peek() == Some(&Token::Temp) {
+            1
+        } else {
+            0
+        };
+        let Some(type_len) = self.type_prefix_len_at(off) else {
             return false;
         };
-        Self::looks_like_name_token(self.peek_at(type_len))
+        Self::looks_like_name_token(self.peek_at(off + type_len))
             && matches!(
-                self.peek_at(type_len + 1),
+                self.peek_at(off + type_len + 1),
                 Some(Token::Eq | Token::Semicolon)
             )
     }
 
-    fn type_prefix_len(&self) -> Option<usize> {
-        match self.peek() {
+    fn type_prefix_len_at(&self, off: usize) -> Option<usize> {
+        match self.peek_at(off) {
             Some(Token::IntKw | Token::BooleanKw) => Some(1),
-            Some(Token::Ident(name)) if name == "Seq" && self.peek_at(1) == Some(&Token::Lt) => {
+            Some(Token::Ident(name))
+                if (name == "Seq" || name == "List") && self.peek_at(off + 1) == Some(&Token::Lt) =>
+            {
                 let mut i = 2;
                 if matches!(
-                    self.peek_at(i),
+                    self.peek_at(off + i),
                     Some(Token::Ident(_) | Token::IntKw | Token::BooleanKw | Token::Void)
                 ) {
                     i += 1;
                 } else {
                     return Some(1);
                 }
-                if self.peek_at(i) == Some(&Token::Gt) {
+                if self.peek_at(off + i) == Some(&Token::Gt) {
                     Some(i + 1)
                 } else {
                     Some(1)
@@ -910,9 +927,9 @@ impl Parser {
             }
             Some(Token::Ident(_)) => {
                 let mut i = 1;
-                while self.peek_at(i) == Some(&Token::Dot) {
+                while self.peek_at(off + i) == Some(&Token::Dot) {
                     i += 1;
-                    if matches!(self.peek_at(i), Some(Token::Ident(_))) {
+                    if matches!(self.peek_at(off + i), Some(Token::Ident(_))) {
                         i += 1;
                     } else {
                         break;
@@ -926,6 +943,12 @@ impl Parser {
 
     fn parse_local(&mut self) -> Stmt {
         let start = self.peek_span().start;
+        let is_temp = if self.peek() == Some(&Token::Temp) {
+            self.pos += 1;
+            true
+        } else {
+            false
+        };
         let ty = self.parse_type();
         let name = self.bump_name();
         let init = if self.peek() == Some(&Token::Eq) {
@@ -935,7 +958,82 @@ impl Parser {
             None
         };
         self.expect(Token::Semicolon, "`;` after local");
-        self.stmt(start, StmtKind::Local { ty, name, init })
+        self.stmt(
+            start,
+            StmtKind::Local {
+                ty,
+                name,
+                init,
+                is_temp,
+            },
+        )
+    }
+
+    fn parse_run_stmt(&mut self, start: usize, slash: bool) -> Stmt {
+        let cmd_start = if slash {
+            let span = self.peek_span();
+            self.pos += 1;
+            span.end
+        } else {
+            self.pos += 1;
+            if matches!(self.peek(), Some(Token::String(_))) {
+                let s = match self.bump() {
+                    Some((Token::String(s), _)) => s,
+                    _ => String::new(),
+                };
+                self.expect(Token::Semicolon, "`;` after `run`");
+                return self.stmt(
+                    start,
+                    StmtKind::Run {
+                        command: strip_cmd(&s),
+                    },
+                );
+            }
+            if matches!(self.peek(), Some(Token::LParen)) {
+                self.pos += 1;
+                let s = match self.bump() {
+                    Some((Token::String(s), _)) => s,
+                    _ => {
+                        self.error("expected command string");
+                        String::new()
+                    }
+                };
+                self.expect(Token::RParen, "`)`");
+                self.expect(Token::Semicolon, "`;` after `run`");
+                return self.stmt(
+                    start,
+                    StmtKind::Run {
+                        command: strip_cmd(&s),
+                    },
+                );
+            }
+            self.peek_span().start
+        };
+        let mut semi = None;
+        for i in self.pos..self.tokens.len() {
+            if matches!(self.tokens[i].0, Token::Semicolon) {
+                semi = Some(i);
+                break;
+            }
+        }
+        let Some(i) = semi else {
+            self.error("expected `;` after command");
+            return self.stmt(
+                start,
+                StmtKind::Run {
+                    command: String::new(),
+                },
+            );
+        };
+        let end = self.tokens[i].1.start;
+        let raw = self.source.get(cmd_start..end).unwrap_or("").trim();
+        self.pos = i + 1;
+        self.stmt(
+            start,
+            StmtKind::Run {
+                command: strip_cmd(raw),
+            },
+        )
     }
 
     fn parse_stmt(&mut self) -> Stmt {
@@ -955,6 +1053,8 @@ impl Parser {
             return self.parse_local();
         }
         match self.peek() {
+            Some(Token::Run) => self.parse_run_stmt(start, false),
+            Some(Token::Slash) => self.parse_run_stmt(start, true),
             Some(Token::If) => self.parse_if(),
             Some(Token::Foreach) => self.parse_foreach(),
             Some(Token::Switch) => self.parse_switch(),
@@ -1422,6 +1522,24 @@ impl Parser {
                     },
                 )
             }
+            Some((Token::Run, span)) => {
+                self.expect(Token::LParen, "`(`");
+                let s = match self.bump() {
+                    Some((Token::String(s), _)) => s,
+                    _ => {
+                        self.error("expected command string");
+                        String::new()
+                    }
+                };
+                self.expect(Token::RParen, "`)`");
+                self.expr(
+                    span.start,
+                    ExprKind::Call {
+                        callee: Box::new(Expr::new(span.clone(), ExprKind::Ident("run".into()))),
+                        args: vec![Expr::new(span, ExprKind::String(s))],
+                    },
+                )
+            }
             Some((Token::LParen, _)) => {
                 let expr = self.parse_expr();
                 self.expect(Token::RParen, "`)`");
@@ -1433,4 +1551,8 @@ impl Parser {
             }
         }
     }
+}
+
+fn strip_cmd(s: &str) -> String {
+    s.trim().trim_start_matches('/').trim().to_string()
 }

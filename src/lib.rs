@@ -2,6 +2,7 @@
 
 pub mod ast;
 pub mod cli;
+pub mod cmds;
 pub mod compile;
 pub mod config;
 pub mod diagnostic;
@@ -32,7 +33,7 @@ pub fn parse(source: &str) -> Result<CompilationUnit, Vec<Diagnostic>> {
     if !lex_errors.is_empty() {
         return Err(lex_errors);
     }
-    parser::parse_tokens(source.len()..source.len(), tokens)
+    parser::parse_tokens(source, tokens)
 }
 
 #[cfg(test)]
@@ -608,5 +609,229 @@ public chain C {
             "{errors:?}"
         );
         assert!(errors.iter().any(|e| e.span.end > e.span.start));
+    }
+
+    fn dump_ed(src: &str, edition: crate::config::Edition) -> String {
+        let unit = parse(src).unwrap();
+        let info = extract_binary_info(&unit);
+        let cfg = crate::config::MincConfig {
+            edition,
+            pack: "demo".into(),
+            game_version: if edition == crate::config::Edition::Java {
+                "1.21.11".into()
+            } else {
+                "1.21.70".into()
+            },
+            ..crate::config::MincConfig::default()
+        };
+        crate::lower::dump_commands(&crate::lower::lower_project(&unit, &cfg, &info).unwrap())
+    }
+
+    #[test]
+    fn parses_temp_list_and_run() {
+        let src = r#"
+pack demo;
+public class Kit {
+    public static void open() {
+        temp int flash = 3;
+        temp Item key = Items.GOLD_INGOT.count(1);
+        List<Item> loot = List.of(Items.GOLD_INGOT.count(1), Items.IRON_INGOT.count(4));
+        foreach (Item it : loot) {
+            give(Players.all(), it);
+        }
+        run "say kit";
+        /kill @e[type=zombie];
+        run give @a diamond 1;
+    }
+}
+"#;
+        let unit = parse(src).expect("parse builtins");
+        let Item::Class(class) = &unit.items[0] else {
+            panic!("class");
+        };
+        let Member::Method(m) = &class.members[0] else {
+            panic!("method");
+        };
+        assert!(m.body.iter().any(|s| matches!(
+            s.kind,
+            crate::ast::StmtKind::Local { is_temp: true, .. }
+        )));
+        assert!(m.body.iter().any(|s| matches!(
+            s.kind,
+            crate::ast::StmtKind::Run { .. }
+        )));
+        assert_eq!(
+            m.body
+                .iter()
+                .filter(|s| matches!(s.kind, crate::ast::StmtKind::Run { .. }))
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn temp_int_is_not_a_scoreboard_and_resets_scratch() {
+        let src = r#"
+pack demo;
+public class Match {
+    public static int a;
+    public static int b;
+    public static int c;
+}
+public chain C {
+    temp int flash = 3;
+    Match.a = flash;
+    Match.a = Match.b + Match.c;
+}
+"#;
+        let dump = dump_ed(src, crate::config::Edition::Bedrock);
+        assert!(dump.contains("scoreboard players set mcs"), "{dump}");
+        assert!(dump.contains(" 3"), "{dump}");
+        assert!(!dump.contains("objectives add flash"), "{dump}");
+        assert!(dump.contains("scoreboard players reset #t"), "{dump}");
+    }
+
+    #[test]
+    fn list_foreach_unrolls_give_per_edition() {
+        let src = r#"
+pack demo;
+public chain C {
+    List<Item> loot = List.of(Items.GOLD_INGOT.count(1), Items.IRON_INGOT.count(4));
+    foreach (Item it : loot) {
+        give(Players.all(), it);
+    }
+}
+"#;
+        let be = dump_ed(src, crate::config::Edition::Bedrock);
+        assert!(be.contains("give @a gold_ingot 1"), "{be}");
+        assert!(be.contains("give @a iron_ingot 4"), "{be}");
+        assert!(!be.contains("minecraft:gold_ingot"), "{be}");
+        let je = dump_ed(src, crate::config::Edition::Java);
+        assert!(je.contains("give @a minecraft:gold_ingot 1"), "{je}");
+        assert!(je.contains("give @a minecraft:iron_ingot 4"), "{je}");
+        assert!(!je.contains("hasitem="), "{je}");
+    }
+
+    #[test]
+    fn run_and_slash_emit_one_command() {
+        let src = r#"
+pack demo;
+public chain C {
+    run "say hello";
+    /say hi;
+    say("kit");
+}
+"#;
+        let dump = dump_ed(src, crate::config::Edition::Bedrock);
+        assert!(dump.contains("say hello"), "{dump}");
+        assert!(dump.contains("say hi"), "{dump}");
+        assert!(dump.contains("say kit"), "{dump}");
+    }
+
+    #[test]
+    fn effect_tellraw_title_split_editions() {
+        let src = r#"
+pack demo;
+public chain C {
+    effect(Players.all(), "speed", 10, 1);
+    tellraw(Players.all(), Text.raw("撤离"));
+    title(Players.all(), Title.TITLE, "地铁");
+    xp(Players.self(), 5);
+}
+"#;
+        let be = dump_ed(src, crate::config::Edition::Bedrock);
+        assert!(be.contains("effect @a speed 10 1 false"), "{be}");
+        assert!(!be.contains("effect give"), "{be}");
+        assert!(be.contains("rawtext"), "{be}");
+        assert!(be.contains("title @a title 地铁"), "{be}");
+        assert!(be.contains("xp 5 @s"), "{be}");
+        let je = dump_ed(src, crate::config::Edition::Java);
+        assert!(je.contains("effect give @a minecraft:speed 10 1 false"), "{je}");
+        assert!(je.contains("{\"text\":\"撤离\"}"), "{je}");
+        assert!(!je.contains("rawtext"), "{je}");
+        assert!(je.contains("{\"text\":\"地铁\"}"), "{je}");
+        assert!(je.contains("xp add @s 5 points"), "{je}");
+    }
+
+    #[test]
+    fn temp_second_use_is_rejected() {
+        let src = r#"
+pack demo;
+public class Match { public static int a; public static int b; }
+public chain C {
+    temp int flash = 3;
+    Match.a = flash;
+    Match.b = flash;
+}
+"#;
+        let unit = parse(src).unwrap();
+        let info = extract_binary_info(&unit);
+        let cfg = crate::config::MincConfig {
+            edition: crate::config::Edition::Bedrock,
+            pack: "demo".into(),
+            ..crate::config::MincConfig::default()
+        };
+        let err = crate::lower::lower_project(&unit, &cfg, &info).expect_err("second use");
+        assert!(
+            err.iter().any(|e| e.message.contains("already consumed")),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn item_count_is_ok_on_bedrock() {
+        let src = r#"
+pack demo;
+public chain C {
+    give(Players.all(), Items.GOLD_INGOT.count(1));
+}
+"#;
+        let unit = parse(src).unwrap();
+        let cfg = crate::config::MincConfig {
+            edition: crate::config::Edition::Bedrock,
+            pack: "demo".into(),
+            ..crate::config::MincConfig::default()
+        };
+        let errors = sema::check_with_config(&unit, Some(&cfg));
+        assert!(
+            errors.iter().all(|e| !e.message.contains("execute store")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn java_replaceitem_is_item_replace() {
+        let src = r#"
+pack demo;
+public chain C {
+    replaceItem(Players.self(), "hotbar.0", Items.GOLD_INGOT.count(1));
+}
+"#;
+        let be = dump_ed(src, crate::config::Edition::Bedrock);
+        assert!(
+            be.contains("replaceitem entity @s slot.hotbar.0 gold_ingot 1"),
+            "{be}"
+        );
+        let je = dump_ed(src, crate::config::Edition::Java);
+        assert!(
+            je.contains("item replace entity @s hotbar.0 with minecraft:gold_ingot 1"),
+            "{je}"
+        );
+        assert!(!je.contains("replaceitem"), "{je}");
+    }
+
+    #[test]
+    fn compiles_tutorial_kit_example() {
+        let root = std::path::Path::new("examples/tutorial-kit");
+        let (config, unit) = crate::project::load_and_merge(root).expect("load");
+        let art = crate::compile::compile_unit(&unit, &config).expect("compile");
+        let dump = crate::lower::dump_commands(&art.lowered);
+        assert!(dump.contains("give @a gold_ingot 1"), "{dump}");
+        assert!(dump.contains("give @a iron_ingot 4"), "{dump}");
+        assert!(dump.contains("say kit open"), "{dump}");
+        assert!(dump.contains("kill @e[type=item]"), "{dump}");
+        assert!(dump.contains("effect @a speed"), "{dump}");
+        assert!(!dump.contains("objectives add flash"), "{dump}");
+        assert!(!dump.contains("effect give"), "{dump}");
     }
 }

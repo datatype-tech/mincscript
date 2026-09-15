@@ -236,7 +236,7 @@ fn check_stmts(
                     bedrock_only,
                 );
             }
-            StmtKind::Local { ty, name, init } => {
+            StmtKind::Local { ty, name, init, .. } => {
                 if let Some(init) = init {
                     check_expr(
                         current_class,
@@ -445,6 +445,19 @@ fn check_stmts(
                     bedrock_only,
                 );
             }
+            StmtKind::Run { command } => {
+                if config.map(|c| c.strict_raw).unwrap_or(false) {
+                    errors.push(Diagnostic::new(
+                        stmt.span.clone(),
+                        "`run` / `/` is forbidden under --strict-raw",
+                    ));
+                }
+                if let Some(cfg) = config {
+                    if let Err(e) = crate::isa::check_command(cfg.edition, command) {
+                        errors.push(Diagnostic::new(stmt.span.clone(), e));
+                    }
+                }
+            }
             StmtKind::Assign { target, value, .. } => {
                 check_expr(
                     current_class,
@@ -598,11 +611,20 @@ fn check_expr(
                         }
                     }
                 }
-                if name == "cmd" && config.map(|c| c.strict_raw).unwrap_or(false) {
-                    errors.push(Diagnostic::new(
-                        expr.span.clone(),
-                        "`cmd` is forbidden under --strict-raw",
-                    ));
+                if name == "cmd" || name == "run" {
+                    if config.map(|c| c.strict_raw).unwrap_or(false) {
+                        errors.push(Diagnostic::new(
+                            expr.span.clone(),
+                            "`cmd` / `run` is forbidden under --strict-raw",
+                        ));
+                    }
+                    if let Some(cfg) = config {
+                        if let Some(ExprKind::String(cmd)) = args.first().map(|a| &a.kind) {
+                            if let Err(e) = crate::isa::check_command(cfg.edition, cmd) {
+                                errors.push(Diagnostic::new(expr.span.clone(), e));
+                            }
+                        }
+                    }
                 }
             }
             if let ExprKind::Field { base, name } = &callee.kind {
@@ -631,13 +653,22 @@ fn check_expr(
                         check_raw_selector(config, sel, expr.span.clone(), errors);
                     }
                 }
-                if name == "count" {
+                if name == "count" && args.is_empty() {
                     if let Some(cfg) = config {
                         if cfg.edition == Edition::Bedrock {
-                            errors.push(Diagnostic::new(
-                                expr.span.clone(),
-                                "`.count()` cannot be stored on Bedrock (no `execute store`); use `.exists()`",
-                            ));
+                            let itemish = match &base.kind {
+                                ExprKind::Ident(n) if n == "Items" || n == "Item" => true,
+                                ExprKind::Field { base, .. } => {
+                                    matches!(&base.kind, ExprKind::Ident(n) if n == "Items")
+                                }
+                                _ => false,
+                            };
+                            if !itemish {
+                                errors.push(Diagnostic::new(
+                                    expr.span.clone(),
+                                    "`.count()` cannot be stored on Bedrock (no `execute store`); use `.exists()`",
+                                ));
+                            }
                         }
                     }
                 }
@@ -861,6 +892,7 @@ fn type_of(
                                     | "Blocks"
                                     | "World"
                                     | "Text"
+                                    | "List"
                             ) =>
                     {
                         Some(class.clone())
@@ -877,7 +909,10 @@ fn type_of(
             if let ExprKind::Ident(name) = &callee.kind {
                 return match name.as_str() {
                     "block" => Some("Block".into()),
-                    "title" | "tellraw" => Some("void".into()),
+                    "title" | "tellraw" | "give" | "kill" | "effect" | "clear"
+                    | "playsound" | "particle" | "summon" | "setblock" | "say" | "weather"
+                    | "time" | "xp" | "difficulty" | "enchant" | "replaceItem"
+                    | "replaceitem" | "cmd" | "run" => Some("void".into()),
                     "random" => Some("int".into()),
                     _ => None,
                 };
@@ -901,6 +936,8 @@ fn builtin_return(owner: &str, name: &str) -> Option<String> {
             | ("BlockPos", "down") => "BlockPos",
             ("Region", "box") | ("Region", "circle") => "Region",
             ("Items", _) | ("Blocks", _) => owner,
+            ("List", "of") => "List",
+            ("Item", "count") | ("Item", "data") | ("Item", "component") => "Item",
             _ => return None,
         }
         .to_string(),
@@ -958,6 +995,7 @@ fn named_type(ty: &TypeRef) -> Option<String> {
     match ty {
         TypeRef::Named(path) => Some(path.parts.last().cloned().unwrap_or_default()),
         TypeRef::Seq(inner) => named_type(inner),
+        TypeRef::List(inner) => named_type(inner).map(|t| format!("List<{t}>")),
         TypeRef::Int => Some("int".into()),
         TypeRef::Boolean => Some("boolean".into()),
         TypeRef::Void => Some("void".into()),

@@ -4,15 +4,17 @@
 //! share an execute walker (`docs/minecraft-commands/crosswalk/parser-implementation.md`).
 
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     AssignOp, BinOp, ChainDef, ClassDef, CompilationUnit, ContextPrefix, Expr, ExprKind, Item,
     Member, MethodDef, Stmt, StmtKind, TypeRef, UnaryOp,
 };
+use crate::cmds::{self, ItemStack};
 use crate::config::{Edition, MincConfig};
 use crate::diagnostic::Diagnostic;
 use crate::extract::{expr_int, BinaryInfo, SymbolKind};
+use crate::isa;
 use crate::layout::{ChainCmdMeta, Facing};
 
 #[derive(Debug, Clone)]
@@ -59,6 +61,10 @@ struct Lower<'a> {
     current_class: String,
     this_sel: String,
     bindings: HashMap<String, String>,
+    locals_expr: HashMap<String, Expr>,
+    lists: HashMap<String, Vec<Expr>>,
+    temp_names: HashSet<String>,
+    temp_consumed: HashSet<String>,
     errors: Vec<Diagnostic>,
     temp: Cell<u32>,
 }
@@ -77,6 +83,9 @@ enum ConstVal {
         dy: i64,
         dz: i64,
     },
+    Item(ItemStack),
+    Pos(String),
+    List(Vec<ConstVal>),
 }
 
 #[derive(Clone, Debug)]
@@ -179,6 +188,10 @@ impl<'a> Lower<'a> {
             current_class: String::new(),
             this_sel: "@s".into(),
             bindings: HashMap::new(),
+            locals_expr: HashMap::new(),
+            lists: HashMap::new(),
+            temp_names: HashSet::new(),
+            temp_consumed: HashSet::new(),
             errors: Vec::new(),
             temp: Cell::new(0),
         }
@@ -196,12 +209,6 @@ impl<'a> Lower<'a> {
                 setup.push(format!("scoreboard objectives add {} dummy", sym.id));
             }
         }
-        setup.push(format!(
-            "scoreboard players add {} mt 0",
-            self.config.edition.world_holder()
-        ));
-        setup.push("scoreboard players add #t0 mt 0".into());
-        setup.push("scoreboard players add #t1 mt 0".into());
         for f in self.fields.values() {
             if f.is_static && f.kind == SymbolKind::Objective {
                 setup.push(format!(
@@ -229,6 +236,10 @@ impl<'a> Lower<'a> {
                         self.current_class = class.name.clone();
                         self.this_sel = "@s".into();
                         self.bindings.clear();
+                        self.locals_expr.clear();
+                        self.lists.clear();
+                        self.temp_names.clear();
+                        self.temp_consumed.clear();
                         self.temp.set(0);
                         for p in &method.params {
                             if matches!(named(&p.ty).as_str(), "Player" | "Entity" | "Runner")
@@ -289,6 +300,10 @@ impl<'a> Lower<'a> {
                 self.current_class.clear();
                 self.this_sel = "@s".into();
                 self.bindings.clear();
+                self.locals_expr.clear();
+                self.lists.clear();
+                self.temp_names.clear();
+                self.temp_consumed.clear();
                 self.temp.set(0);
                 let commands = self.lower_chain(chain);
                 chains.push(LoweredChain {
@@ -361,7 +376,11 @@ impl<'a> Lower<'a> {
                         StmtKind::Return(_) | StmtKind::Local { .. } => {
                             self.lower_block(std::slice::from_ref(&inner))
                         }
-                        _ => self.lower_stmt(&inner),
+                        _ => {
+                            let cmds = self.lower_stmt(&inner);
+                            self.consume_temps_in_stmt(&inner);
+                            cmds
+                        }
                     };
                     for (i, cmd) in cmds.into_iter().enumerate() {
                         let mut m = meta.clone();
@@ -428,25 +447,10 @@ impl<'a> Lower<'a> {
                     let _ = annotations;
                     out.extend(self.lower_block(std::slice::from_ref(inner.as_ref())));
                 }
-                StmtKind::Local { name, init, ty } => {
-                    if let Some(init) = init {
-                        if matches!(named(ty).as_str(), "Player" | "Entity")
-                            || self.classes.contains_key(&named(ty))
-                        {
-                            if let Some(sel) = self.selector_of(init) {
-                                self.bindings.insert(name.clone(), sel.emit());
-                            }
-                        }
-                        if let ExprKind::Call { callee, .. } = &init.kind {
-                            if let ExprKind::Field { name: m, base } = &callee.kind {
-                                if m == "of" {
-                                    if let Some(sel) = self.selector_of(base) {
-                                        self.bindings.insert(name.clone(), sel.emit());
-                                    }
-                                }
-                            }
-                        }
-                    }
+                StmtKind::Local {
+                    name, init, ty, is_temp,
+                } => {
+                    self.bind_local(name, ty, init.as_ref(), *is_temp);
                 }
                 StmtKind::Label(_) => {}
                 StmtKind::Return(_) => {
@@ -455,7 +459,10 @@ impl<'a> Lower<'a> {
                     }
                     break;
                 }
-                _ => out.extend(self.lower_stmt(&stmts[i])),
+                _ => {
+                    out.extend(self.lower_stmt(&stmts[i]));
+                    self.consume_temps_in_stmt(&stmts[i]);
+                }
             }
             i += 1;
         }
@@ -480,6 +487,35 @@ impl<'a> Lower<'a> {
             StmtKind::Foreach {
                 name, iter, body, ..
             } => {
+                if let Some(elems) = self.list_elems(iter) {
+                    let mut out = Vec::new();
+                    for elem in elems {
+                        let prev_bind = self.bindings.remove(name);
+                        let prev_const = self.consts.remove(name);
+                        let prev_local = self.locals_expr.remove(name);
+                        self.locals_expr.insert(name.clone(), elem.clone());
+                        if let Some(c) = self.const_of(&elem) {
+                            self.consts.insert(name.clone(), c);
+                        }
+                        if let Some(sel) = self.selector_of(&elem) {
+                            self.bindings.insert(name.clone(), sel.emit());
+                        }
+                        out.extend(self.lower_block(body));
+                        self.locals_expr.remove(name);
+                        self.consts.remove(name);
+                        self.bindings.remove(name);
+                        if let Some(p) = prev_bind {
+                            self.bindings.insert(name.clone(), p);
+                        }
+                        if let Some(p) = prev_const {
+                            self.consts.insert(name.clone(), p);
+                        }
+                        if let Some(p) = prev_local {
+                            self.locals_expr.insert(name.clone(), p);
+                        }
+                    }
+                    return out;
+                }
                 let sel = self
                     .selector_of(iter)
                     .unwrap_or_else(|| Selector::simple("@a"));
@@ -559,11 +595,23 @@ impl<'a> Lower<'a> {
             }
             StmtKind::Assign { target, op, value } => self.lower_assign(target, *op, value),
             StmtKind::Expr(expr) => self.lower_expr_stmt(expr),
+            StmtKind::Run { command } => {
+                let s = cmds::strip_slash(command);
+                if let Err(e) = isa::check_command(self.config.edition, &s) {
+                    self.errors.push(Diagnostic::new(stmt.span.clone(), e));
+                }
+                vec![s]
+            }
             StmtKind::Return(_) | StmtKind::Label(_) | StmtKind::Local { .. } => Vec::new(),
         }
     }
 
     fn lower_assign(&mut self, target: &Expr, op: AssignOp, value: &Expr) -> Vec<String> {
+        if let ExprKind::Ident(n) = &value.kind {
+            if let Some(e) = self.locals_expr.get(n).cloned() {
+                return self.lower_assign(target, op, &e);
+            }
+        }
         if let Some((holder, field)) = self.lvalue(target) {
             match field.kind {
                 SymbolKind::Tag => {
@@ -576,7 +624,7 @@ impl<'a> Lower<'a> {
                     return vec![format!("tag {holder} {verb} {}", field.short)];
                 }
                 SymbolKind::Objective => {
-                    if let Some(n) = eval_int(value, &self.enums) {
+                    if let Some(n) = self.int_of(value) {
                         let verb = match op {
                             AssignOp::Eq => "set",
                             AssignOp::PlusEq => "add",
@@ -596,12 +644,14 @@ impl<'a> Lower<'a> {
                         )];
                     }
                     if is_score_arith(value) {
+                        let before = self.temp.get();
                         if let Some((mut cmds, h, o)) = self.materialize_score(value) {
                             let mop = assign_mop(op);
                             cmds.push(format!(
                                 "scoreboard players operation {holder} {} {mop} {h} {o}",
                                 field.short
                             ));
+                            self.reset_scratch(before, &mut cmds);
                             return cmds;
                         }
                     }
@@ -639,8 +689,9 @@ impl<'a> Lower<'a> {
                 return out;
             }
         }
-        if let Some(n) = eval_int(value, &self.enums) {
-            out.push(format!("scoreboard players set #t0 mt {n}"));
+        if let Some(n) = self.int_of(value) {
+            let t = self.temp_holder();
+            out.push(format!("scoreboard players set {t} mt {n}"));
             let mop = match op {
                 AssignOp::Eq => "=",
                 AssignOp::PlusEq => "+=",
@@ -650,10 +701,18 @@ impl<'a> Lower<'a> {
                 AssignOp::PercentEq => "%=",
             };
             out.push(format!(
-                "scoreboard players operation {holder} {obj} {mop} #t0 mt"
+                "scoreboard players operation {holder} {obj} {mop} {t} mt"
             ));
+            out.push(format!("scoreboard players reset {t} mt"));
         }
         out
+    }
+
+    fn reset_scratch(&self, before: u32, cmds: &mut Vec<String>) {
+        let after = self.temp.get();
+        for n in before..after {
+            cmds.push(format!("scoreboard players reset #t{n} mt"));
+        }
     }
 
     fn temp_holder(&self) -> String {
@@ -668,7 +727,7 @@ impl<'a> Lower<'a> {
                 return Some((Vec::new(), holder, field.short));
             }
         }
-        if let Some(n) = eval_int(expr, &self.enums) {
+        if let Some(n) = self.int_of(expr) {
             let t = self.temp_holder();
             return Some((
                 vec![format!("scoreboard players set {t} mt {n}")],
@@ -720,19 +779,65 @@ impl<'a> Lower<'a> {
                             .map(|s| s.emit())
                             .unwrap_or_else(|| "@s".into());
                         let mode = enum_or_name(args.first()).to_lowercase();
-                        return vec![format!("gamemode {mode} {sel}")];
+                        return vec![cmds::gamemode(&mode, &sel)];
                     }
                     if name == "give" {
                         let sel = self
                             .selector_of(base)
                             .map(|s| s.emit())
                             .unwrap_or_else(|| "@s".into());
-                        let item = item_id(args.first());
-                        let count = args
+                        let mut item = args
+                            .first()
+                            .map(|e| self.item_of(e))
+                            .unwrap_or_else(|| ItemStack::new("air"));
+                        if let Some(n) = args.get(1).and_then(|e| self.int_of(e)) {
+                            item.count = n;
+                        }
+                        return self.emit_cmd(expr.span.clone(), cmds::give(self.config.edition, &sel, &item));
+                    }
+                    if name == "kill" {
+                        let sel = self
+                            .selector_of(base)
+                            .map(|s| s.emit())
+                            .unwrap_or_else(|| "@s".into());
+                        return self.emit_cmd(expr.span.clone(), cmds::kill(self.config.edition, &sel));
+                    }
+                    if name == "clear" {
+                        let sel = self
+                            .selector_of(base)
+                            .map(|s| s.emit())
+                            .unwrap_or_else(|| "@s".into());
+                        let item = args.first().map(|e| self.item_of(e));
+                        let n = args.get(1).and_then(|e| self.int_of(e));
+                        return self.emit_cmd(
+                            expr.span.clone(),
+                            cmds::clear(self.config.edition, &sel, item.as_ref(), n),
+                        );
+                    }
+                    if name == "replaceItem" || name == "replaceitem" {
+                        let sel = self
+                            .selector_of(base)
+                            .map(|s| s.emit())
+                            .unwrap_or_else(|| "@s".into());
+                        let slot = args
+                            .first()
+                            .and_then(string_lit)
+                            .unwrap_or_else(|| enum_or_name(args.first()));
+                        let item = args
                             .get(1)
-                            .and_then(|e| eval_int(e, &self.enums))
-                            .unwrap_or(1);
-                        return vec![format!("give {sel} {item} {count}")];
+                            .map(|e| self.item_of(e))
+                            .unwrap_or_else(|| ItemStack::new("air"));
+                        return self.emit_cmd(
+                            expr.span.clone(),
+                            cmds::replace_item(self.config.edition, &sel, &slot, &item),
+                        );
+                    }
+                    if name == "effect" {
+                        let sel = self
+                            .selector_of(base)
+                            .map(|s| s.emit())
+                            .unwrap_or_else(|| "@s".into());
+                        return self.lower_effect(&sel, args, expr.span.clone());
                     }
                     if name == "teleport" {
                         let sel = self
@@ -743,7 +848,7 @@ impl<'a> Lower<'a> {
                             .first()
                             .and_then(|e| self.pos_of(e))
                             .unwrap_or_else(|| "~ ~ ~".into());
-                        return vec![format!("teleport {sel} {pos}")];
+                        return vec![cmds::teleport(&sel, &pos)];
                     }
                     if let Some(owner) = self.call_owner(base) {
                         if let Some(method) = self
@@ -828,6 +933,57 @@ impl<'a> Lower<'a> {
         }
     }
 
+    fn emit_cmd(&mut self, span: crate::span::Span, result: Result<String, String>) -> Vec<String> {
+        match result {
+            Ok(s) => vec![s],
+            Err(e) => {
+                self.errors.push(Diagnostic::new(span, e));
+                Vec::new()
+            }
+        }
+    }
+
+    fn sel_arg(&self, args: &[Expr], default: &str) -> String {
+        args.first()
+            .and_then(|e| self.selector_of(e))
+            .map(|s| s.emit())
+            .unwrap_or_else(|| default.to_string())
+    }
+
+    fn text_arg(args: &[Expr], i: usize) -> String {
+        args.get(i)
+            .and_then(|e| match &e.kind {
+                ExprKind::Call { callee, args } => {
+                    if let ExprKind::Field { name, .. } = &callee.kind {
+                        if name == "raw" {
+                            return string_lit(&args[0]);
+                        }
+                    }
+                    string_lit(e)
+                }
+                _ => string_lit(e),
+            })
+            .or_else(|| args.get(i).map(enum_or_name_expr))
+            .unwrap_or_default()
+    }
+
+    fn lower_effect(&mut self, sel: &str, args: &[Expr], span: crate::span::Span) -> Vec<String> {
+        let name = enum_or_name(args.first()).to_lowercase();
+        if name == "clear" || name.is_empty() {
+            return self.emit_cmd(
+                span,
+                cmds::effect_clear(self.config.edition, sel, None),
+            );
+        }
+        let seconds = args.get(1).and_then(|e| self.int_of(e)).unwrap_or(30);
+        let amp = args.get(2).and_then(|e| self.int_of(e)).unwrap_or(0);
+        let hide = matches!(args.get(3).map(|e| &e.kind), Some(ExprKind::Bool(true)));
+        self.emit_cmd(
+            span,
+            cmds::effect_give(self.config.edition, sel, &name, seconds, amp, hide),
+        )
+    }
+
     fn lower_builtin_call(
         &mut self,
         name: &str,
@@ -835,63 +991,154 @@ impl<'a> Lower<'a> {
         span: crate::span::Span,
     ) -> Vec<String> {
         match name {
-            "cmd" => {
-                let mut s = string_lit(&args[0]).unwrap_or_default();
-                if let Some(rest) = s.strip_prefix('/') {
-                    s = rest.to_string();
+            "cmd" | "run" => {
+                let s = cmds::strip_slash(&string_lit(&args[0]).unwrap_or_default());
+                if let Err(e) = isa::check_command(self.config.edition, &s) {
+                    self.errors.push(Diagnostic::new(span, e));
                 }
                 vec![s]
             }
             "title" => {
-                let sel = args
-                    .first()
-                    .and_then(|e| self.selector_of(e))
-                    .map(|s| s.emit())
-                    .unwrap_or_else(|| "@a".into());
+                let sel = self.sel_arg(args, "@a");
                 let loc = enum_or_name(args.get(1)).to_lowercase();
-                let loc = match loc.as_str() {
-                    "title" | "subtitle" | "actionbar" | "times" | "clear" | "reset" => loc,
-                    _ => "title".into(),
-                };
-                let text = args.get(2).and_then(string_lit).unwrap_or_default();
-                match self.config.edition {
-                    Edition::Bedrock => vec![format!("title {sel} {loc} {text}")],
-                    Edition::Java => vec![format!(
-                        "title {sel} {loc} {{\"text\":\"{}\"}}",
-                        escape_json(&text)
-                    )],
-                }
+                let text = Self::text_arg(args, 2);
+                self.emit_cmd(
+                    span,
+                    cmds::title(self.config.edition, &sel, &loc, &text),
+                )
             }
             "tellraw" => {
+                let sel = self.sel_arg(args, "@a");
+                let text = Self::text_arg(args, 1);
+                self.emit_cmd(span, cmds::tellraw(self.config.edition, &sel, &text))
+            }
+            "give" => {
+                let sel = self.sel_arg(args, "@s");
+                let mut item = args
+                    .get(1)
+                    .map(|e| self.item_of(e))
+                    .unwrap_or_else(|| ItemStack::new("air"));
+                if let Some(n) = args.get(2).and_then(|e| self.int_of(e)) {
+                    item.count = n;
+                }
+                self.emit_cmd(span, cmds::give(self.config.edition, &sel, &item))
+            }
+            "kill" => {
+                let sel = self.sel_arg(args, "@s");
+                self.emit_cmd(span, cmds::kill(self.config.edition, &sel))
+            }
+            "effect" => {
+                let sel = self.sel_arg(args, "@s");
+                let rest = if args.len() > 1 { &args[1..] } else { &[] };
+                self.lower_effect(&sel, rest, span)
+            }
+            "clear" => {
+                let sel = self.sel_arg(args, "@s");
+                let item = args.get(1).map(|e| self.item_of(e));
+                let n = args.get(2).and_then(|e| self.int_of(e));
+                self.emit_cmd(
+                    span,
+                    cmds::clear(self.config.edition, &sel, item.as_ref(), n),
+                )
+            }
+            "playsound" => {
+                let sound = Self::text_arg(args, 0);
                 let sel = args
-                    .first()
+                    .get(1)
                     .and_then(|e| self.selector_of(e))
                     .map(|s| s.emit())
                     .unwrap_or_else(|| "@a".into());
-                let text = args
+                let pos = args.get(2).and_then(|e| self.pos_of(e));
+                let vol = args.get(3).and_then(|e| self.int_of(e)).map(|n| n as f64);
+                let pitch = args.get(4).and_then(|e| self.int_of(e)).map(|n| n as f64);
+                self.emit_cmd(
+                    span,
+                    cmds::playsound(
+                        self.config.edition,
+                        &sound,
+                        &sel,
+                        pos.as_deref(),
+                        vol,
+                        pitch,
+                        None,
+                    ),
+                )
+            }
+            "particle" => {
+                let n = Self::text_arg(args, 0);
+                let pos = args
                     .get(1)
-                    .and_then(|e| match &e.kind {
-                        ExprKind::Call { callee, args } => {
-                            if let ExprKind::Field { name, .. } = &callee.kind {
-                                if name == "raw" {
-                                    return string_lit(&args[0]);
-                                }
-                            }
-                            string_lit(e)
-                        }
-                        _ => string_lit(e),
-                    })
-                    .unwrap_or_default();
-                match self.config.edition {
-                    Edition::Bedrock => vec![format!(
-                        "tellraw {sel} {{\"rawtext\":[{{\"text\":\"{}\"}}]}}",
-                        escape_json(&text)
-                    )],
-                    Edition::Java => vec![format!(
-                        "tellraw {sel} {{\"text\":\"{}\"}}",
-                        escape_json(&text)
-                    )],
-                }
+                    .and_then(|e| self.pos_of(e))
+                    .unwrap_or_else(|| "~ ~ ~".into());
+                self.emit_cmd(span, cmds::particle(self.config.edition, &n, &pos))
+            }
+            "summon" => {
+                let entity = Self::text_arg(args, 0);
+                let pos = args
+                    .get(1)
+                    .and_then(|e| self.pos_of(e))
+                    .unwrap_or_else(|| "~ ~ ~".into());
+                let extra = args.get(2).and_then(string_lit);
+                self.emit_cmd(
+                    span,
+                    cmds::summon(self.config.edition, &entity, &pos, extra.as_deref()),
+                )
+            }
+            "setblock" => {
+                let pos = args
+                    .first()
+                    .and_then(|e| self.pos_of(e))
+                    .unwrap_or_else(|| "~ ~ ~".into());
+                let block = args
+                    .get(1)
+                    .map(|e| self.block_of(e))
+                    .unwrap_or_else(|| "air".into());
+                self.emit_cmd(span, cmds::setblock(self.config.edition, &pos, &block))
+            }
+            "say" => vec![cmds::say(&Self::text_arg(args, 0))],
+            "weather" => {
+                let kind = enum_or_name(args.first()).to_lowercase();
+                let d = args.get(1).and_then(|e| self.int_of(e));
+                vec![cmds::weather(&kind, d)]
+            }
+            "time" => {
+                let spec = args
+                    .first()
+                    .and_then(|e| self.int_of(e).map(|n| n.to_string()))
+                    .unwrap_or_else(|| enum_or_name(args.first()).to_lowercase());
+                vec![cmds::time_set(&spec)]
+            }
+            "xp" => {
+                let sel = self.sel_arg(args, "@s");
+                let amount = args.get(1).and_then(|e| self.int_of(e)).unwrap_or(1);
+                let levels = matches!(args.get(2).map(|e| &e.kind), Some(ExprKind::Bool(true)))
+                    || enum_or_name(args.get(2)).eq_ignore_ascii_case("levels");
+                self.emit_cmd(span, cmds::xp(self.config.edition, &sel, amount, levels))
+            }
+            "difficulty" => vec![cmds::difficulty(&enum_or_name(args.first()))],
+            "enchant" => {
+                let sel = self.sel_arg(args, "@s");
+                let ench = enum_or_name(args.get(1)).to_lowercase();
+                let level = args.get(2).and_then(|e| self.int_of(e)).unwrap_or(1);
+                self.emit_cmd(
+                    span,
+                    cmds::enchant(self.config.edition, &sel, &ench, level),
+                )
+            }
+            "replaceItem" | "replaceitem" => {
+                let sel = self.sel_arg(args, "@s");
+                let slot = args
+                    .get(1)
+                    .and_then(string_lit)
+                    .unwrap_or_else(|| enum_or_name(args.get(1)));
+                let item = args
+                    .get(2)
+                    .map(|e| self.item_of(e))
+                    .unwrap_or_else(|| ItemStack::new("air"));
+                self.emit_cmd(
+                    span,
+                    cmds::replace_item(self.config.edition, &sel, &slot, &item),
+                )
             }
             "random" => {
                 if self.config.edition == Edition::Java {
@@ -899,14 +1146,8 @@ impl<'a> Lower<'a> {
                         .push(Diagnostic::new(span, "`random` is Bedrock-only"));
                     return Vec::new();
                 }
-                let lo = args
-                    .first()
-                    .and_then(|e| eval_int(e, &self.enums))
-                    .unwrap_or(0);
-                let hi = args
-                    .get(1)
-                    .and_then(|e| eval_int(e, &self.enums))
-                    .unwrap_or(0);
+                let lo = args.first().and_then(|e| self.int_of(e)).unwrap_or(0);
+                let hi = args.get(1).and_then(|e| self.int_of(e)).unwrap_or(0);
                 vec![format!(
                     "scoreboard players random {} mt {lo} {hi}",
                     self.this_sel
@@ -914,6 +1155,214 @@ impl<'a> Lower<'a> {
             }
             _ => Vec::new(),
         }
+    }
+
+    fn bind_local(&mut self, name: &str, ty: &TypeRef, init: Option<&Expr>, is_temp: bool) {
+        if is_temp {
+            self.temp_names.insert(name.to_string());
+        }
+        let Some(init) = init else {
+            return;
+        };
+        self.locals_expr.insert(name.to_string(), init.clone());
+        if let Some(elems) = self.list_elems(init) {
+            self.lists.insert(name.to_string(), elems);
+        }
+        if let Some(v) = self.const_of(init) {
+            self.consts.insert(name.to_string(), v);
+        }
+        if matches!(named(ty).as_str(), "Player" | "Entity")
+            || self.classes.contains_key(&named(ty))
+        {
+            if let Some(sel) = self.selector_of(init) {
+                self.bindings.insert(name.to_string(), sel.emit());
+            }
+        }
+        if let ExprKind::Call { callee, .. } = &init.kind {
+            if let ExprKind::Field { name: m, base } = &callee.kind {
+                if m == "of" {
+                    if let Some(sel) = self.selector_of(base) {
+                        self.bindings.insert(name.to_string(), sel.emit());
+                    }
+                }
+            }
+        }
+    }
+
+    fn consume_temps_in_stmt(&mut self, stmt: &Stmt) {
+        let names: Vec<String> = self.temp_names.iter().cloned().collect();
+        for n in names {
+            if !stmt_uses_name(stmt, &n) {
+                continue;
+            }
+            if !self.temp_consumed.insert(n.clone()) {
+                self.errors.push(Diagnostic::new(
+                    stmt.span.clone(),
+                    format!("temp `{n}` was already consumed (one-shot; not a scoreboard)"),
+                ));
+            }
+            self.locals_expr.remove(&n);
+            self.consts.remove(&n);
+            self.lists.remove(&n);
+            self.bindings.remove(&n);
+        }
+    }
+
+    fn int_of(&self, expr: &Expr) -> Option<i64> {
+        if let ExprKind::Ident(n) = &expr.kind {
+            if let Some(ConstVal::Int(v)) = self.consts.get(n) {
+                return Some(*v);
+            }
+            if let Some(e) = self.locals_expr.get(n).cloned() {
+                return self.int_of(&e);
+            }
+        }
+        eval_int(expr, &self.enums)
+    }
+
+    fn list_elems(&self, expr: &Expr) -> Option<Vec<Expr>> {
+        match &expr.kind {
+            ExprKind::Ident(n) => self.lists.get(n).cloned(),
+            ExprKind::Call { callee, args } => {
+                if let ExprKind::Field { base, name } = &callee.kind {
+                    if name == "of" {
+                        if let ExprKind::Ident(recv) = &base.kind {
+                            if recv == "List" {
+                                return Some(args.clone());
+                            }
+                        }
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn is_item_expr(&self, expr: &Expr) -> bool {
+        match &expr.kind {
+            ExprKind::Field { base, .. } => {
+                matches!(&base.kind, ExprKind::Ident(n) if n == "Items")
+            }
+            ExprKind::Call { callee, .. } => {
+                if let ExprKind::Field { base, name } = &callee.kind {
+                    if matches!(name.as_str(), "count" | "data" | "component") {
+                        return self.is_item_expr(base);
+                    }
+                }
+                false
+            }
+            ExprKind::Ident(n) => {
+                if matches!(self.consts.get(n), Some(ConstVal::Item(_))) {
+                    return true;
+                }
+                if let Some(e) = self.locals_expr.get(n).cloned() {
+                    return self.is_item_expr(&e);
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    fn item_of(&self, expr: &Expr) -> ItemStack {
+        if let ExprKind::Ident(n) = &expr.kind {
+            if let Some(ConstVal::Item(it)) = self.consts.get(n) {
+                return it.clone();
+            }
+            if let Some(e) = self.locals_expr.get(n).cloned() {
+                return self.item_of(&e);
+            }
+        }
+        match &expr.kind {
+            ExprKind::Call { callee, args } => {
+                if let ExprKind::Field { base, name } = &callee.kind {
+                    let mut item = self.item_of(base);
+                    match name.as_str() {
+                        "count" => {
+                            if let Some(n) = args.first().and_then(|e| self.int_of(e)) {
+                                item.count = n;
+                            }
+                        }
+                        "data" => {
+                            if let Some(n) = args.first().and_then(|e| self.int_of(e)) {
+                                item.data = Some(n);
+                            }
+                        }
+                        "component" => {
+                            let k = args.first().and_then(string_lit).unwrap_or_default();
+                            let v = args.get(1).and_then(string_lit).unwrap_or_default();
+                            item.components.push((k, v));
+                        }
+                        _ => {}
+                    }
+                    return item;
+                }
+                ItemStack::new("air")
+            }
+            ExprKind::Field { base, name } => {
+                if let ExprKind::Ident(recv) = &base.kind {
+                    if recv == "Items" {
+                        return ItemStack::new(name);
+                    }
+                }
+                ItemStack::new(name)
+            }
+            ExprKind::String(s) => ItemStack::new(s),
+            _ => ItemStack::new(item_id(Some(expr))),
+        }
+    }
+
+    fn block_of(&self, expr: &Expr) -> String {
+        if let ExprKind::Ident(n) = &expr.kind {
+            if let Some(e) = self.locals_expr.get(n).cloned() {
+                return self.block_of(&e);
+            }
+        }
+        match &expr.kind {
+            ExprKind::Field { base, name } => {
+                if let ExprKind::Ident(recv) = &base.kind {
+                    if recv == "Blocks" {
+                        return name.to_lowercase();
+                    }
+                }
+                name.to_lowercase()
+            }
+            ExprKind::Ident(n) => n.to_lowercase(),
+            ExprKind::String(s) => s.clone(),
+            _ => block_id(expr),
+        }
+    }
+
+    fn const_of(&self, expr: &Expr) -> Option<ConstVal> {
+        if let ExprKind::Ident(n) = &expr.kind {
+            if let Some(v) = self.consts.get(n) {
+                return Some(v.clone());
+            }
+            if let Some(e) = self.locals_expr.get(n).cloned() {
+                return self.const_of(&e);
+            }
+        }
+        if self.is_item_expr(expr) {
+            return Some(ConstVal::Item(self.item_of(expr)));
+        }
+        if let ExprKind::Call { callee, args } = &expr.kind {
+            if let ExprKind::Field { base, name } = &callee.kind {
+                if name == "of" {
+                    if let ExprKind::Ident(recv) = &base.kind {
+                        if recv == "List" {
+                            let xs: Option<Vec<ConstVal>> =
+                                args.iter().map(|a| self.const_of(a)).collect();
+                            return xs.map(ConstVal::List);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(pos) = self.pos_of(expr) {
+            return Some(ConstVal::Pos(pos));
+        }
+        eval_const(expr)
     }
 
     fn lvalue(&self, expr: &Expr) -> Option<(String, FieldMeta)> {
@@ -965,6 +1414,9 @@ impl<'a> Lower<'a> {
                 if let Some(sel) = self.bindings.get(name) {
                     return Some(Selector::simple(sel));
                 }
+                if let Some(e) = self.locals_expr.get(name).cloned() {
+                    return self.selector_of(&e);
+                }
                 None
             }
             ExprKind::This => Some(Selector::simple(&self.this_sel)),
@@ -1012,7 +1464,7 @@ impl<'a> Lower<'a> {
             "inBox" => {
                 let nums: Vec<i64> = args
                     .iter()
-                    .filter_map(|e| eval_int(e, &self.enums))
+                    .filter_map(|e| self.int_of(e))
                     .collect();
                 if nums.len() == 6 {
                     sel.args.push(("x".into(), nums[0].to_string()));
@@ -1024,7 +1476,7 @@ impl<'a> Lower<'a> {
                 }
             }
             "within" => {
-                let r = eval_int(args.get(1)?, &self.enums)?;
+                let r = self.int_of(args.get(1)?)?;
                 match self.config.edition {
                     Edition::Bedrock => sel.args.push(("r".into(), r.to_string())),
                     Edition::Java => sel.args.push(("distance".into(), format!("..{r}"))),
@@ -1043,7 +1495,7 @@ impl<'a> Lower<'a> {
                 let item = item_id(args.first());
                 let n = args
                     .get(1)
-                    .and_then(|e| eval_int(e, &self.enums))
+                    .and_then(|e| self.int_of(e))
                     .unwrap_or(1);
                 match self.config.edition {
                     Edition::Bedrock => sel
@@ -1108,6 +1560,14 @@ impl<'a> Lower<'a> {
     }
 
     fn pos_of(&self, expr: &Expr) -> Option<String> {
+        if let ExprKind::Ident(n) = &expr.kind {
+            if let Some(ConstVal::Pos(p)) = self.consts.get(n) {
+                return Some(p.clone());
+            }
+            if let Some(e) = self.locals_expr.get(n).cloned() {
+                return self.pos_of(&e);
+            }
+        }
         fn walk(expr: &Expr, x: &mut String, y: &mut String, z: &mut String) -> bool {
             match &expr.kind {
                 ExprKind::Call { callee, args } => {
@@ -1311,7 +1771,7 @@ impl<'a> Lower<'a> {
         if field.kind != SymbolKind::Objective {
             return None;
         }
-        let n = eval_int(rhs, &self.enums)?;
+        let n = self.int_of(rhs)?;
         let range = match op {
             BinOp::Eq => format!("{n}"),
             BinOp::Ne => format!("{n}"),
@@ -1326,8 +1786,8 @@ impl<'a> Lower<'a> {
                     rhs,
                 } = &rhs.kind
                 {
-                    let a = eval_int(lhs, &self.enums)?;
-                    let b = eval_int(rhs, &self.enums)?;
+                    let a = self.int_of(lhs)?;
+                    let b = self.int_of(rhs)?;
                     format!("{a}..{b}")
                 } else {
                     return None;
@@ -1362,6 +1822,73 @@ impl<'a> Lower<'a> {
         let pos = self.pos_of(args.first()?)?;
         let id = block_id(rhs);
         Some(format!("{pos} {id}"))
+    }
+}
+
+fn enum_or_name_expr(expr: &Expr) -> String {
+    enum_or_name(Some(expr))
+}
+
+fn stmt_uses_name(stmt: &Stmt, name: &str) -> bool {
+    match &stmt.kind {
+        StmtKind::Annotated { inner, .. } => stmt_uses_name(inner, name),
+        StmtKind::Local { init, .. } => init.as_ref().is_some_and(|e| expr_uses_name(e, name)),
+        StmtKind::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            expr_uses_name(cond, name)
+                || then_body.iter().any(|s| stmt_uses_name(s, name))
+                || else_body
+                    .as_ref()
+                    .is_some_and(|b| b.iter().any(|s| stmt_uses_name(s, name)))
+        }
+        StmtKind::Foreach { iter, body, .. } => {
+            expr_uses_name(iter, name) || body.iter().any(|s| stmt_uses_name(s, name))
+        }
+        StmtKind::Switch {
+            expr,
+            arms,
+            default,
+        } => {
+            expr_uses_name(expr, name)
+                || arms.iter().any(|(p, b)| {
+                    expr_uses_name(p, name) || b.iter().any(|s| stmt_uses_name(s, name))
+                })
+                || default
+                    .as_ref()
+                    .is_some_and(|b| b.iter().any(|s| stmt_uses_name(s, name)))
+        }
+        StmtKind::Context { prefixes, body } => {
+            prefixes.iter().any(|p| match p {
+                ContextPrefix::As(e) | ContextPrefix::At(e) | ContextPrefix::Facing(e) => {
+                    expr_uses_name(e, name)
+                }
+                _ => false,
+            }) || body.iter().any(|s| stmt_uses_name(s, name))
+        }
+        StmtKind::Return(Some(expr)) | StmtKind::Expr(expr) => expr_uses_name(expr, name),
+        StmtKind::Assign { target, value, .. } => {
+            expr_uses_name(target, name) || expr_uses_name(value, name)
+        }
+        StmtKind::Run { command } => command.split(|c: char| !c.is_ascii_alphanumeric())
+            .any(|w| w == name),
+        StmtKind::Return(None) | StmtKind::Label(_) => false,
+    }
+}
+
+fn expr_uses_name(expr: &Expr, name: &str) -> bool {
+    match &expr.kind {
+        ExprKind::Ident(n) => n == name,
+        ExprKind::Unary { expr, .. } => expr_uses_name(expr, name),
+        ExprKind::Binary { lhs, rhs, .. } => expr_uses_name(lhs, name) || expr_uses_name(rhs, name),
+        ExprKind::Call { callee, args } => {
+            expr_uses_name(callee, name) || args.iter().any(|a| expr_uses_name(a, name))
+        }
+        ExprKind::Field { base, .. } => expr_uses_name(base, name),
+        ExprKind::New { args, .. } => args.iter().any(|a| expr_uses_name(a, name)),
+        _ => false,
     }
 }
 
@@ -1525,6 +2052,7 @@ fn named(ty: &TypeRef) -> String {
     match ty {
         TypeRef::Named(p) => p.parts.last().cloned().unwrap_or_default(),
         TypeRef::Seq(inner) => named(inner),
+        TypeRef::List(_) => "List".into(),
         TypeRef::Int => "int".into(),
         TypeRef::Boolean => "boolean".into(),
         TypeRef::Void => "void".into(),
@@ -1648,10 +2176,6 @@ fn offset_coord(cur: &str, n: i64) -> String {
 fn triple(expr: &Expr) -> Option<[String; 3]> {
     let _ = expr;
     None
-}
-
-fn escape_json(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 pub fn dump_commands(lowered: &Lowered) -> String {

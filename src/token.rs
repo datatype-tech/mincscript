@@ -76,6 +76,10 @@ pub enum Token {
     Set,
     #[token("cmd", priority = 2)]
     Cmd,
+    #[token("temp", priority = 2)]
+    Temp,
+    #[token("run", priority = 2)]
+    Run,
     #[token("include", priority = 2)]
     Include,
     #[token("link", priority = 2)]
@@ -278,6 +282,8 @@ impl fmt::Display for Token {
             Token::Fill => "fill",
             Token::Set => "set",
             Token::Cmd => "cmd",
+            Token::Temp => "temp",
+            Token::Run => "run",
             Token::Include => "include",
             Token::Link => "link",
             Token::Clock => "clock",

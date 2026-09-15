@@ -13,6 +13,7 @@ Command syntax that comes out of the compiler must follow [`docs/minecraft-comma
 | [03 Syntax](03-syntax.md) | Java-like grammar, selectors, `as`/`at`, raw commands |
 | [04 Chains, controller, world](04-chains-and-world.md) | One file = one CB sequence; layouts; chests |
 | [05 MINCB and compilation](05-mincb-and-compile.md) | Unified binary, lowering, edition splits |
+| [06 Syntax tutorial](06-tutorial.md) | Temps, `List.of`, one-command statements, Java vs Bedrock builtins |
 | [Illustrative 地铁逃生](example-metro.md) | One small project in this syntax (not buildable yet) |
 
 ```mermaid
@@ -79,7 +80,7 @@ metro-escape/
 
 ## Non-goals for v1
 
-- Generics (except builtin `Seq<T>` selectors), inheritance beyond a single `extends`, interfaces
+- Generics (except builtin `Seq<T>` selectors and compile-time `List<T>`), inheritance beyond a single `extends`, interfaces
 - A VM inside Minecraft (no custom bytecode interpreter in-game)
 - Sharing one execute-walker between Java and Bedrock
 - Education Edition `/agent`

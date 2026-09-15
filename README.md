@@ -2,7 +2,9 @@
 
 A Java-shaped language that compiles to Minecraft (Java Edition or Bedrock). Language design: [`docs/language/`](docs/language/README.md). Command grammars live in [`docs/minecraft-commands/`](docs/minecraft-commands/README.md).
 
-The `minc` compiler walks **tokenizer → parser (syntax validation) → type check → command lowering → MINCB**. Bedrock and Java each get their own execute/selector printer; they do not share an execute walker.
+The `minc` compiler walks **tokenizer → parser (syntax validation) → type check → command lowering → MINCB**. Bedrock and Java each get their own execute/selector printer; they do not share an execute walker. User `temp` locals and `List.of` are compile-time (or one-shot `#tN mt` scratch) and are **not** dummy scoreboard objectives.
+
+Language tutorial: [`docs/language/06-tutorial.md`](docs/language/06-tutorial.md).
 
 ## Status
 
@@ -15,7 +17,7 @@ Implemented, starting from the lexer:
 - **Lower** — dummy scores, tags, `execute` (edition-specific), chain flatten, stack/linear/snake/box layouts
 - **CLI** — `new`, `check`, `build`, `inspect`, `dump --commands`, `layout`
 
-A buildable 地铁逃生 sketch is [`examples/metro-escape/`](examples/metro-escape/).
+A buildable 地铁逃生 sketch is [`examples/metro-escape/`](examples/metro-escape/). Builtins, `temp`, and `List.of` are in [`examples/tutorial-kit/`](examples/tutorial-kit/) and [`docs/language/06-tutorial.md`](docs/language/06-tutorial.md).
 
 ## Build
 

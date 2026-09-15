@@ -108,6 +108,8 @@ pub enum TypeRef {
     Boolean,
     Named(PathName),
     Seq(Box<TypeRef>),
+    /// Compile-time list (`List.of(...)`). Unrolled; not a runtime array.
+    List(Box<TypeRef>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -263,6 +265,12 @@ pub enum StmtKind {
         ty: TypeRef,
         name: String,
         init: Option<Expr>,
+        /// One-shot local: inlined / scratch `#tN`, then destroyed. Never a user objective.
+        is_temp: bool,
+    },
+    /// One command, one statement (`run "…"`, `/say hi`, `run give @a diamond 1`).
+    Run {
+        command: String,
     },
     If {
         cond: Expr,

@@ -1,0 +1,9 @@
+pack demo.kit;
+
+@Controller
+world KitWorld {
+    origin (0, 64, 0);
+    dimension overworld;
+    chain Demo at (2, 64, 0) layout stack facing up;
+    clock Demo;
+}

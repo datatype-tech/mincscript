@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn keywords_are_not_idents() {
-        let tokens = kinds("pack public class int boolean foreach chain world");
+        let tokens = kinds("pack public class int boolean foreach chain world temp run");
         assert_eq!(
             tokens,
             vec![
@@ -152,6 +152,8 @@ mod tests {
                 Token::Foreach,
                 Token::Chain,
                 Token::World,
+                Token::Temp,
+                Token::Run,
             ]
         );
     }

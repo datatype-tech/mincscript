@@ -1,0 +1,8 @@
+pack demo.kit;
+
+@Chain("Demo")
+@Repeat
+@AlwaysActive
+public chain Demo {
+    Kit.open();
+}
