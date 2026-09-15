@@ -1,0 +1,15 @@
+[package]
+name = "mincscript"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MPL-2.0"
+description = "The MincScript programming language"
+readme = "README.md"
+
+[dependencies]
+ariadne = "0.5.1"
+# `spill-stack` pulls in `psm` versions that need a newer rustc than this environment.
+chumsky = { version = "0.9.3", default-features = false, features = ["std"] }
+logos = "0.16.1"
+thiserror = "2.0.20"

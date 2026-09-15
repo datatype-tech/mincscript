@@ -1,0 +1,4 @@
+// Starter MincScript sample. Syntax will grow with the language.
+let x = 1 + 2 * 3;
+let y = -(x - 7);
+x == y;
