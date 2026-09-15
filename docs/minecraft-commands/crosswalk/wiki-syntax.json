@@ -1,0 +1,653 @@
+{
+  "clear": {
+    "java": [
+      "clear [] [] []"
+    ],
+    "bedrock": [
+      "clear [player: target] [itemName: Item] [data: int] [maxCount: int]"
+    ]
+  },
+  "clone": {
+    "java": [
+      "clone . . .",
+      "clone from . . .",
+      "... . . .",
+      "... . . .",
+      "... to . . .",
+      "... [strict] [replace] [force|move|normal]",
+      "... [strict] masked [force|move|normal]",
+      "... [strict] filtered [force|move|normal]",
+      "clone . . .",
+      "clone from . . .",
+      "... . . .",
+      "... to . . .",
+      "... [strict] [replace|masked] [force|move|normal]",
+      "... [strict] filtered [force|move|normal]",
+      "clone",
+      "clone from",
+      "clone replace [force|move|normal]",
+      "clone from replace [force|move|normal]",
+      "clone masked [force|move|normal]",
+      "clone from masked [force|move|normal]",
+      "clone filtered [force|move|normal]",
+      "clone from filtered [force|move|normal]",
+      "clone to",
+      "clone from to",
+      "clone to replace [force|move|normal]",
+      "clone from to replace [force|move|normal]",
+      "clone to masked [force|move|normal]",
+      "clone from to masked [force|move|normal]",
+      "clone to filtered [force|move|normal]",
+      "clone from to filtered [force|move|normal]"
+    ],
+    "bedrock": [
+      "clone [maskMode: MaskMode] [cloneMode: CloneMode]",
+      "clone filtered [blockStates: block states]"
+    ]
+  },
+  "damage": {
+    "java": [
+      "damage [] [at ]",
+      "damage [] [by ] [from ]"
+    ],
+    "bedrock": [
+      "damage entity",
+      "damage [cause: DamageCause]",
+      "minecraft:generic"
+    ]
+  },
+  "deop": {
+    "java": [
+      "deop"
+    ],
+    "bedrock": [
+      "deop"
+    ]
+  },
+  "difficulty": {
+    "java": [
+      "difficulty [peaceful|easy|normal|hard]"
+    ],
+    "bedrock": [
+      "difficulty",
+      "difficulty"
+    ]
+  },
+  "effect": {
+    "java": [
+      "effect clear [] []",
+      "effect give [] [] []",
+      "effect give infinite [] []",
+      "\u221e"
+    ],
+    "bedrock": [
+      "effect [seconds: int] [amplifier: int] [hideParticles: Boolean]",
+      "effect infinite [amplifier: int] [hideParticles: Boolean]",
+      "\u221e",
+      "effect clear [effect: Effect]"
+    ]
+  },
+  "execute": {
+    "java": [
+      "'''/execute''' ...",
+      "... [[#align|'''align''']] -> execute",
+      "... [[#anchored|'''anchored''']] -> execute",
+      "... [[#as|'''as''']] -> execute",
+      "... [[#at|'''at''']] -> execute",
+      "... [[#facing|'''facing''']] (|entity ) -> execute",
+      "... [[#in|'''in''']] -> execute",
+      "... [[#on|'''on''']] -> execute",
+      "... [[#positioned|'''positioned''']] (|as |over ) -> execute",
+      "... [[#rotated|'''rotated''']] (|as ) -> execute",
+      "... [[#store|'''store''']] (result|success) ...",
+      "... block -> execute",
+      "... bossbar (max|value) -> execute",
+      "... entity -> execute",
+      "... score -> execute",
+      "... storage -> execute",
+      "... [[#summon|'''summon''']] -> execute",
+      "... ([[#if|'''if''']]|[[#unless|'''unless''']]) ...",
+      "... biome -> [execute]",
+      "... block -> [execute]",
+      "... blocks (all|masked) -> [execute]",
+      "... data ...",
+      "... block -> [execute]",
+      "... entity -> [execute]",
+      "... storage -> [execute]",
+      "... dimension -> [execute]",
+      "... entity -> [execute]",
+      "... function -> execute",
+      "... items ...",
+      "... block -> [execute]",
+      "... entity -> [execute]",
+      "... loaded -> [execute]",
+      "... predicate -> [execute]",
+      "... score ...",
+      "... (|>=) -> [execute]",
+      "... matches -> [execute]",
+      "... stopwatch -> [execute]",
+      "... [[#run|'''run''']]",
+      "-> execute",
+      "-> [execute]"
+    ],
+    "bedrock": [
+      "'''/execute''' ...",
+      "... [[#align|'''align''']]",
+      "... [[#anchored|'''anchored''']]",
+      "... [[#as|'''as''']]",
+      "... [[#at|'''at''']]",
+      "... [[#facing|'''facing''']] ...",
+      "...",
+      "... entity",
+      "... [[#in|'''in''']]",
+      "... [[#positioned|'''positioned''']] ...",
+      "...",
+      "... as",
+      "... [[#rotated|'''rotated''']] ...",
+      "...",
+      "... as",
+      "... '''''' ...",
+      "... block ...",
+      "... [chainedCommand: ExecuteChainedOption_0]",
+      "... [chainedCommand: ExecuteChainedOption_0]",
+      "... blocks [chainedCommand: ExecuteChainedOption_0]",
+      "... entity [chainedCommand: ExecuteChainedOption_0]",
+      "... score ...",
+      "... [chainedCommand: ExecuteChainedOption_0]",
+      "... matches [chainedCommand: ExecuteChainedOption_0]",
+      "... [[#run|'''run''']]",
+      "chainedCommand: ExecuteChainedOption_0"
+    ]
+  },
+  "fill": {
+    "java": [
+      "fill [outline|hollow|destroy|strict|replace|keep]",
+      "fill replace [outline|hollow|destroy|strict]"
+    ],
+    "bedrock": [
+      "fill [oldBlockHandling: FillMode]",
+      "fill [oldBlockHandling: FillMode]",
+      "replace",
+      "fill replace [replaceTileName: Block] [replaceBlockStates: block states]",
+      "fill replace [replaceTileName: Block] [replaceBlockStates: block states]",
+      "0 0 0 0 0 0",
+      "0 0 0 1 1 1",
+      "1 1 1 0 0 0",
+      "destroy",
+      "hollow",
+      "replace",
+      "keep",
+      "outline",
+      "replace",
+      "replace",
+      "strict",
+      "replace",
+      "max_block_modifications"
+    ]
+  },
+  "function": {
+    "java": [
+      "function",
+      "function",
+      "function with (block |entity |storage ) []"
+    ],
+    "bedrock": [
+      "function"
+    ]
+  },
+  "gamemode": {
+    "java": [
+      "gamemode []"
+    ],
+    "bedrock": [
+      "gamemode [player: target]",
+      "gamemode [player: target]"
+    ]
+  },
+  "gamerule": {
+    "java": [
+      "gamerule []"
+    ],
+    "bedrock": [
+      "gamerule [value: Boolean]",
+      "gamerule [value: int]",
+      "true",
+      "false",
+      "maxEntityCramming",
+      "randomTickSpeed",
+      "spawnRadius",
+      "playersSleepingPercentage",
+      "functionCommandLimit",
+      "maxCommandChainLength"
+    ]
+  },
+  "give": {
+    "java": [
+      "give []"
+    ],
+    "bedrock": [
+      "give [amount: int] [data: int] [components: json]"
+    ]
+  },
+  "help": {
+    "java": [
+      "help",
+      "help"
+    ],
+    "bedrock": [
+      "help",
+      "help [page: int]"
+    ]
+  },
+  "kick": {
+    "java": [
+      "kick []"
+    ],
+    "bedrock": [
+      "kick [reason: message]"
+    ]
+  },
+  "kill": {
+    "java": [
+      "kill []"
+    ],
+    "bedrock": [
+      "kill [target: target]",
+      "target: target",
+      "target: target",
+      "kill @s",
+      "kill",
+      "kill Steve",
+      "kill @e[type=item]",
+      "kill @e[type=!player]",
+      "kill @e[distance=..10,type=creeper]",
+      "kill @e[r=10,type=creeper]",
+      "kill @e[type=arrow,nbt={inBlockState:{Name:\"minecraft:target\"}}]"
+    ]
+  },
+  "list": {
+    "java": [
+      "list",
+      "list uuids"
+    ],
+    "bedrock": [
+      "list"
+    ]
+  },
+  "locate": {
+    "java": [
+      "/locate structure",
+      "/locate biome",
+      "/locate poi"
+    ],
+    "bedrock": [
+      "/locate structure [useNewChunksOnly: Boolean]",
+      "/locate biome",
+      "true",
+      "false",
+      "false"
+    ]
+  },
+  "loot": {
+    "java": [
+      "loot",
+      "give",
+      "insert",
+      "spawn",
+      "replace block",
+      "replace entity",
+      "replace block",
+      "replace entity",
+      "fish [|mainhand|offhand]",
+      "loot",
+      "kill",
+      "mine [|mainhand|offhand]",
+      "magic"
+    ],
+    "bedrock": [
+      "loot",
+      "give",
+      "insert",
+      "spawn",
+      "replace block slot.container",
+      "replace entity",
+      "replace block slot.container [count: int]",
+      "replace entity [count: int]",
+      "kill [\"|mainhand|offhand\": string]",
+      "loot [\"|mainhand|offhand\": string]",
+      "mine [\"|mainhand|offhand\": string]",
+      "loot_table: string",
+      "mainhand",
+      "offhand",
+      "kill",
+      "replace block",
+      "insert",
+      "replace block",
+      "insert",
+      "spawn",
+      "slot.container",
+      "position: x y z",
+      "entity: target",
+      "loot_table: string",
+      "entity: target",
+      "player: target",
+      "position: x y z",
+      "position: x y z"
+    ]
+  },
+  "msg": {
+    "java": [],
+    "bedrock": [
+      "player: target",
+      "player: target"
+    ]
+  },
+  "op": {
+    "java": [
+      "op"
+    ],
+    "bedrock": [
+      "op"
+    ]
+  },
+  "particle": {
+    "java": [
+      "particle []",
+      "particle [force|normal] []"
+    ],
+    "bedrock": [
+      "particle [position: x y z]"
+    ]
+  },
+  "playsound": {
+    "java": [
+      "playsound [] [] [] [] [] []"
+    ],
+    "bedrock": [
+      "playsound [player: target] [position: x y z] [volume: float] [pitch: float] [minimumVolume: float]"
+    ]
+  },
+  "ride": {
+    "java": [
+      "ride mount",
+      "ride dismount"
+    ],
+    "bedrock": [
+      "ride start_riding [teleportRules: TeleportRules] [howToFill: FillType]",
+      "ride stop_riding",
+      "ride evict_riders",
+      "ride summon_rider [spawnEvent: string] [nameTag: string]",
+      "ride summon_ride [rideRules: RideRules] [spawnEvent: string] [nameTag: string]",
+      "start_riding",
+      "teleportRules: TeleportRules",
+      "teleport_ride",
+      "teleport_ride",
+      "teleport_rider",
+      "teleport_rider",
+      "if_group_fits",
+      "until_full",
+      "if_group_fits",
+      "until_full",
+      "no_ride_change",
+      "reassign_rides",
+      "skip_riders",
+      "skip_riders",
+      "no_ride_change",
+      "reassign_rides",
+      "riders: target",
+      "rides: target",
+      "ride: target",
+      "ride: target",
+      "ride: target",
+      "teleportRules: TeleportRules",
+      "teleport_ride",
+      "riders: target",
+      "howToFill: FillType",
+      "until_full",
+      "ride: target",
+      "riders: target",
+      "howToFill: FillType",
+      "if_group_fits",
+      "riders: target",
+      "howToFill: FillType",
+      "if_group_fits",
+      "ride: target",
+      "riders: target",
+      "riders: target",
+      "rides: target",
+      "rides: target",
+      "riders: target",
+      "/ride @s mount @e[type=minecraft:skeleton_horse,limit=1]",
+      "/ride @s mount @n[type=arrow]",
+      "/ride @a[tag=A] summon_ride arrow",
+      "/ride @a[tag=A] summon_ride creeper reassign_rides minecraft:become_charged",
+      "/ride @e[type=chicken] summon_rider zombie minecraft:as_baby_jockey"
+    ]
+  },
+  "say": {
+    "java": [
+      "say"
+    ],
+    "bedrock": [
+      "say"
+    ]
+  },
+  "schedule": {
+    "java": [
+      "schedule function <time> [append|replace]",
+      "schedule clear"
+    ],
+    "bedrock": [
+      "schedule on_area_loaded add",
+      "schedule on_area_loaded add circle",
+      "schedule on_area_loaded add tickingarea",
+      "schedule delay add [append{{!}}replace]",
+      "schedule delay clear",
+      "schedule clear",
+      "schedule on_area_loaded clear function",
+      "schedule on_area_loaded clear tickingarea [function: filepath]",
+      "minecraft:",
+      "minecraft:",
+      "append|replace",
+      "replace",
+      "append",
+      "x",
+      "z",
+      "x",
+      "z",
+      "time>",
+      "radius: int"
+    ]
+  },
+  "setblock": {
+    "java": [
+      "setblock [destroy|keep|replace|strict]"
+    ],
+    "bedrock": [
+      "setblock [destroy|keep|replace]",
+      "setblock [destroy|keep|replace]"
+    ]
+  },
+  "setworldspawn": {
+    "java": [
+      "setworldspawn [] []"
+    ],
+    "bedrock": [
+      "setworldspawn [spawnPoint: x y z]"
+    ]
+  },
+  "spawnpoint": {
+    "java": [
+      "spawnpoint [] [] []"
+    ],
+    "bedrock": [
+      "spawnpoint [player: target] [spawnPos: x y z]"
+    ]
+  },
+  "spreadplayers": {
+    "java": [
+      "spreadplayers",
+      "spreadplayers under"
+    ],
+    "bedrock": [
+      "spreadplayers [maxHeight: value]",
+      "spreadDistance: float",
+      "true",
+      "spreadDistance: float",
+      "maxRange: float",
+      "spreadDistance: float",
+      "player: target",
+      "spreadDistance: float"
+    ]
+  },
+  "stopsound": {
+    "java": [
+      "stopsound [] []"
+    ],
+    "bedrock": [
+      "stopsound [sound: string]"
+    ]
+  },
+  "tag": {
+    "java": [
+      "tag add",
+      "tag remove",
+      "tag list"
+    ],
+    "bedrock": [
+      "tag add",
+      "tag remove",
+      "tag list"
+    ]
+  },
+  "teleport": {
+    "java": [
+      "teleport",
+      "teleport",
+      "teleport",
+      "teleport",
+      "teleport",
+      "teleport facing",
+      "teleport facing entity []"
+    ],
+    "bedrock": [
+      "teleport",
+      "teleport [checkForBlocks: Boolean]",
+      "teleport [checkForBlocks: Boolean]",
+      "teleport [checkForBlocks: Boolean]",
+      "teleport [yRot: value] [xRot: value] [checkForBlocks: Boolean]",
+      "teleport facing [checkForBlocks: Boolean]",
+      "teleport facing [checkForBlocks: Boolean]",
+      "teleport [yRot: value] [xRot: value] [checkForBlocks: Boolean]",
+      "teleport facing [checkForBlocks: Boolean]",
+      "teleport facing [checkForBlocks: Boolean]",
+      "true",
+      "false",
+      "player: target",
+      "destination: target",
+      "lookAtEntity: target",
+      "checkForBlocks: Boolean",
+      "teleport Alice",
+      "teleport @a @s",
+      "teleport 100 ~3 100",
+      "teleport ^ ^ ^1",
+      "execute as @p at @s run teleport @s ~ ~ ~ ~10 ~",
+      "execute in minecraft:the_nether run teleport ~ ~ ~",
+      "execute in nether run teleport ~ ~ ~",
+      "execute as @a in minecraft:the_end run teleport 84 57 79",
+      "execute as @a in the_end run teleport 84 57 79",
+      "execute as Alex in minecraft:overworld run teleport 251 64 -160",
+      "execute as Alex in overworld run teleport 251 64 -160"
+    ]
+  },
+  "time": {
+    "java": [
+      "time add",
+      "time of add me>",
+      "time>",
+      "time pause",
+      "time of pause",
+      "time query gametime",
+      "time query time",
+      "time of query time",
+      "time query eline> repetition",
+      "time of query eline> repetition",
+      "e>",
+      "time query eline>",
+      "time of query eline>",
+      "e>",
+      "time rate",
+      "time of rate",
+      "time resume",
+      "time of resume",
+      "time set (me>|)",
+      "time of set (me>|)"
+    ],
+    "bedrock": [
+      "time add",
+      "time>",
+      "time query",
+      "time set",
+      "time set <time: TimeSpec>",
+      "daytime",
+      "gametime",
+      "day",
+      "sunrise",
+      "day",
+      "noon",
+      "sunset",
+      "night",
+      "midnight"
+    ]
+  },
+  "title": {
+    "java": [
+      "title (clear|reset)",
+      "title (title|subtitle|actionbar)",
+      "title times",
+      "title",
+      "title",
+      "title times",
+      "titleraw",
+      "titleraw",
+      "titleraw times",
+      "... clear",
+      "... reset",
+      "... subtitle ...",
+      "... title ...",
+      "... actionbar ...",
+      "... times ...",
+      "titleText: message",
+      "raw json titleText: json",
+      "raw json message: json",
+      "player: target",
+      "player: target"
+    ],
+    "bedrock": []
+  },
+  "transfer": {
+    "java": [
+      "transfer [] []"
+    ],
+    "bedrock": [
+      "transfer"
+    ]
+  },
+  "weather": {
+    "java": [
+      "weather (clear|rain|thunder) []"
+    ],
+    "bedrock": [
+      "weather [duration: int]",
+      "weather query",
+      "clear|rain|thunder",
+      "clear",
+      "rain",
+      "thunder",
+      "clear",
+      "rain",
+      "thunder",
+      "duration: int"
+    ]
+  }
+}

@@ -4,6 +4,8 @@ A programming language implemented in Rust.
 
 This repository currently has the **frontend skeleton**: a Logos lexer, a Chumsky parser, and Ariadne diagnostics. Interpreter, types, and the rest of the language wait for later work.
 
+Minecraft command grammars (Java + Bedrock), intended for a later compiler backend, live in [`docs/minecraft-commands/`](docs/minecraft-commands/README.md).
+
 ## Status
 
 The parser accepts:

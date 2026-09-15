@@ -1,0 +1,2190 @@
+{
+  "source": {
+    "kind": "vanilla-brigadier-tree",
+    "via": "https://github.com/misode/mcmeta/blob/summary/commands/data.json",
+    "game_id": "26.3-rc-3",
+    "game_name": "26.3 Release Candidate 3",
+    "stable": false,
+    "latest_stable": "26.2",
+    "data_version": 5022,
+    "protocol_version": 1073742162
+  },
+  "usages": [
+    {
+      "tokens": [
+        "execute",
+        "align",
+        "<axes:minecraft:swizzle>"
+      ],
+      "usage": "execute align <axes:minecraft:swizzle> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "anchored",
+        "<anchor:minecraft:entity_anchor>"
+      ],
+      "usage": "execute anchored <anchor:minecraft:entity_anchor> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "as",
+        "<targets:minecraft:entity>"
+      ],
+      "usage": "execute as <targets:minecraft:entity> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "at",
+        "<targets:minecraft:entity>"
+      ],
+      "usage": "execute at <targets:minecraft:entity> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "facing",
+        "entity",
+        "<targets:minecraft:entity>",
+        "<anchor:minecraft:entity_anchor>"
+      ],
+      "usage": "execute facing entity <targets:minecraft:entity> <anchor:minecraft:entity_anchor> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "facing",
+        "<pos:minecraft:vec3>"
+      ],
+      "usage": "execute facing <pos:minecraft:vec3> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "biome",
+        "<pos:minecraft:block_pos>",
+        "<biome:minecraft:resource_or_tag>"
+      ],
+      "usage": "execute if biome <pos:minecraft:block_pos> <biome:minecraft:resource_or_tag>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "biome",
+        "<pos:minecraft:block_pos>",
+        "<biome:minecraft:resource_or_tag>"
+      ],
+      "usage": "execute if biome <pos:minecraft:block_pos> <biome:minecraft:resource_or_tag> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "block",
+        "<pos:minecraft:block_pos>",
+        "<block:minecraft:block_predicate>"
+      ],
+      "usage": "execute if block <pos:minecraft:block_pos> <block:minecraft:block_predicate>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "block",
+        "<pos:minecraft:block_pos>",
+        "<block:minecraft:block_predicate>"
+      ],
+      "usage": "execute if block <pos:minecraft:block_pos> <block:minecraft:block_predicate> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "blocks",
+        "<start:minecraft:block_pos>",
+        "<end:minecraft:block_pos>",
+        "<destination:minecraft:block_pos>",
+        "all"
+      ],
+      "usage": "execute if blocks <start:minecraft:block_pos> <end:minecraft:block_pos> <destination:minecraft:block_pos> all",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "blocks",
+        "<start:minecraft:block_pos>",
+        "<end:minecraft:block_pos>",
+        "<destination:minecraft:block_pos>",
+        "all"
+      ],
+      "usage": "execute if blocks <start:minecraft:block_pos> <end:minecraft:block_pos> <destination:minecraft:block_pos> all -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "blocks",
+        "<start:minecraft:block_pos>",
+        "<end:minecraft:block_pos>",
+        "<destination:minecraft:block_pos>",
+        "masked"
+      ],
+      "usage": "execute if blocks <start:minecraft:block_pos> <end:minecraft:block_pos> <destination:minecraft:block_pos> masked",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "blocks",
+        "<start:minecraft:block_pos>",
+        "<end:minecraft:block_pos>",
+        "<destination:minecraft:block_pos>",
+        "masked"
+      ],
+      "usage": "execute if blocks <start:minecraft:block_pos> <end:minecraft:block_pos> <destination:minecraft:block_pos> masked -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "data",
+        "block",
+        "<source:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>"
+      ],
+      "usage": "execute if data block <source:minecraft:block_pos> <path:minecraft:nbt_path>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "data",
+        "block",
+        "<source:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>"
+      ],
+      "usage": "execute if data block <source:minecraft:block_pos> <path:minecraft:nbt_path> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "data",
+        "entity",
+        "<source:minecraft:entity>",
+        "<path:minecraft:nbt_path>"
+      ],
+      "usage": "execute if data entity <source:minecraft:entity> <path:minecraft:nbt_path>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "data",
+        "entity",
+        "<source:minecraft:entity>",
+        "<path:minecraft:nbt_path>"
+      ],
+      "usage": "execute if data entity <source:minecraft:entity> <path:minecraft:nbt_path> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "data",
+        "storage",
+        "<source:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>"
+      ],
+      "usage": "execute if data storage <source:minecraft:resource_location> <path:minecraft:nbt_path>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "data",
+        "storage",
+        "<source:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>"
+      ],
+      "usage": "execute if data storage <source:minecraft:resource_location> <path:minecraft:nbt_path> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "dimension",
+        "<dimension:minecraft:dimension>"
+      ],
+      "usage": "execute if dimension <dimension:minecraft:dimension>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "dimension",
+        "<dimension:minecraft:dimension>"
+      ],
+      "usage": "execute if dimension <dimension:minecraft:dimension> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "entity",
+        "<entities:minecraft:entity>"
+      ],
+      "usage": "execute if entity <entities:minecraft:entity>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "entity",
+        "<entities:minecraft:entity>"
+      ],
+      "usage": "execute if entity <entities:minecraft:entity> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "function",
+        "<name:minecraft:function>"
+      ],
+      "usage": "execute if function <name:minecraft:function> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "items",
+        "block",
+        "<source:minecraft:block_pos>",
+        "<slots:minecraft:slot_source>",
+        "<item_predicate:minecraft:item_predicate>"
+      ],
+      "usage": "execute if items block <source:minecraft:block_pos> <slots:minecraft:slot_source> <item_predicate:minecraft:item_predicate>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "items",
+        "block",
+        "<source:minecraft:block_pos>",
+        "<slots:minecraft:slot_source>",
+        "<item_predicate:minecraft:item_predicate>"
+      ],
+      "usage": "execute if items block <source:minecraft:block_pos> <slots:minecraft:slot_source> <item_predicate:minecraft:item_predicate> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "items",
+        "entity",
+        "<source:minecraft:entity>",
+        "<slots:minecraft:slot_source>",
+        "<item_predicate:minecraft:item_predicate>"
+      ],
+      "usage": "execute if items entity <source:minecraft:entity> <slots:minecraft:slot_source> <item_predicate:minecraft:item_predicate>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "items",
+        "entity",
+        "<source:minecraft:entity>",
+        "<slots:minecraft:slot_source>",
+        "<item_predicate:minecraft:item_predicate>"
+      ],
+      "usage": "execute if items entity <source:minecraft:entity> <slots:minecraft:slot_source> <item_predicate:minecraft:item_predicate> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "loaded",
+        "<pos:minecraft:block_pos>"
+      ],
+      "usage": "execute if loaded <pos:minecraft:block_pos>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "loaded",
+        "<pos:minecraft:block_pos>"
+      ],
+      "usage": "execute if loaded <pos:minecraft:block_pos> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "predicate",
+        "<predicate:minecraft:loot_predicate>"
+      ],
+      "usage": "execute if predicate <predicate:minecraft:loot_predicate>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "predicate",
+        "<predicate:minecraft:loot_predicate>"
+      ],
+      "usage": "execute if predicate <predicate:minecraft:loot_predicate> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "<",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute if score <target:minecraft:score_holder> <targetObjective:minecraft:objective> < <source:minecraft:score_holder> <sourceObjective:minecraft:objective>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "<",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute if score <target:minecraft:score_holder> <targetObjective:minecraft:objective> < <source:minecraft:score_holder> <sourceObjective:minecraft:objective> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "<=",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute if score <target:minecraft:score_holder> <targetObjective:minecraft:objective> <= <source:minecraft:score_holder> <sourceObjective:minecraft:objective>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "<=",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute if score <target:minecraft:score_holder> <targetObjective:minecraft:objective> <= <source:minecraft:score_holder> <sourceObjective:minecraft:objective> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "=",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute if score <target:minecraft:score_holder> <targetObjective:minecraft:objective> = <source:minecraft:score_holder> <sourceObjective:minecraft:objective>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "=",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute if score <target:minecraft:score_holder> <targetObjective:minecraft:objective> = <source:minecraft:score_holder> <sourceObjective:minecraft:objective> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        ">",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute if score <target:minecraft:score_holder> <targetObjective:minecraft:objective> > <source:minecraft:score_holder> <sourceObjective:minecraft:objective>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        ">",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute if score <target:minecraft:score_holder> <targetObjective:minecraft:objective> > <source:minecraft:score_holder> <sourceObjective:minecraft:objective> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        ">=",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute if score <target:minecraft:score_holder> <targetObjective:minecraft:objective> >= <source:minecraft:score_holder> <sourceObjective:minecraft:objective>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        ">=",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute if score <target:minecraft:score_holder> <targetObjective:minecraft:objective> >= <source:minecraft:score_holder> <sourceObjective:minecraft:objective> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "matches",
+        "<range:minecraft:int_range>"
+      ],
+      "usage": "execute if score <target:minecraft:score_holder> <targetObjective:minecraft:objective> matches <range:minecraft:int_range>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "matches",
+        "<range:minecraft:int_range>"
+      ],
+      "usage": "execute if score <target:minecraft:score_holder> <targetObjective:minecraft:objective> matches <range:minecraft:int_range> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "slots",
+        "block",
+        "<source:minecraft:block_pos>",
+        "<slots:minecraft:slot_source>"
+      ],
+      "usage": "execute if slots block <source:minecraft:block_pos> <slots:minecraft:slot_source>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "slots",
+        "block",
+        "<source:minecraft:block_pos>",
+        "<slots:minecraft:slot_source>"
+      ],
+      "usage": "execute if slots block <source:minecraft:block_pos> <slots:minecraft:slot_source> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "slots",
+        "entity",
+        "<source:minecraft:entity>",
+        "<slots:minecraft:slot_source>"
+      ],
+      "usage": "execute if slots entity <source:minecraft:entity> <slots:minecraft:slot_source>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "slots",
+        "entity",
+        "<source:minecraft:entity>",
+        "<slots:minecraft:slot_source>"
+      ],
+      "usage": "execute if slots entity <source:minecraft:entity> <slots:minecraft:slot_source> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "stopwatch",
+        "<id:minecraft:resource_location>",
+        "<range:minecraft:float_range>"
+      ],
+      "usage": "execute if stopwatch <id:minecraft:resource_location> <range:minecraft:float_range>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "if",
+        "stopwatch",
+        "<id:minecraft:resource_location>",
+        "<range:minecraft:float_range>"
+      ],
+      "usage": "execute if stopwatch <id:minecraft:resource_location> <range:minecraft:float_range> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "in",
+        "<dimension:minecraft:dimension>"
+      ],
+      "usage": "execute in <dimension:minecraft:dimension> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "on",
+        "attacker"
+      ],
+      "usage": "execute on attacker -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "on",
+        "controller"
+      ],
+      "usage": "execute on controller -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "on",
+        "leasher"
+      ],
+      "usage": "execute on leasher -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "on",
+        "origin"
+      ],
+      "usage": "execute on origin -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "on",
+        "owner"
+      ],
+      "usage": "execute on owner -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "on",
+        "passengers"
+      ],
+      "usage": "execute on passengers -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "on",
+        "target"
+      ],
+      "usage": "execute on target -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "on",
+        "vehicle"
+      ],
+      "usage": "execute on vehicle -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "positioned",
+        "as",
+        "<targets:minecraft:entity>"
+      ],
+      "usage": "execute positioned as <targets:minecraft:entity> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "positioned",
+        "over",
+        "<heightmap:minecraft:heightmap>"
+      ],
+      "usage": "execute positioned over <heightmap:minecraft:heightmap> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "positioned",
+        "<pos:minecraft:vec3>"
+      ],
+      "usage": "execute positioned <pos:minecraft:vec3> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "rotated",
+        "as",
+        "<targets:minecraft:entity>"
+      ],
+      "usage": "execute rotated as <targets:minecraft:entity> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "rotated",
+        "<rot:minecraft:rotation>"
+      ],
+      "usage": "execute rotated <rot:minecraft:rotation> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "run"
+      ],
+      "usage": "execute run",
+      "redirect": null
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "block",
+        "<target:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>",
+        "byte",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result block <target:minecraft:block_pos> <path:minecraft:nbt_path> byte <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "block",
+        "<target:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>",
+        "double",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result block <target:minecraft:block_pos> <path:minecraft:nbt_path> double <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "block",
+        "<target:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>",
+        "float",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result block <target:minecraft:block_pos> <path:minecraft:nbt_path> float <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "block",
+        "<target:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>",
+        "int",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result block <target:minecraft:block_pos> <path:minecraft:nbt_path> int <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "block",
+        "<target:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>",
+        "long",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result block <target:minecraft:block_pos> <path:minecraft:nbt_path> long <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "block",
+        "<target:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>",
+        "short",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result block <target:minecraft:block_pos> <path:minecraft:nbt_path> short <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "bossbar",
+        "<id:minecraft:resource_location>",
+        "max"
+      ],
+      "usage": "execute store result bossbar <id:minecraft:resource_location> max -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "bossbar",
+        "<id:minecraft:resource_location>",
+        "value"
+      ],
+      "usage": "execute store result bossbar <id:minecraft:resource_location> value -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "entity",
+        "<target:minecraft:entity>",
+        "<path:minecraft:nbt_path>",
+        "byte",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result entity <target:minecraft:entity> <path:minecraft:nbt_path> byte <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "entity",
+        "<target:minecraft:entity>",
+        "<path:minecraft:nbt_path>",
+        "double",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result entity <target:minecraft:entity> <path:minecraft:nbt_path> double <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "entity",
+        "<target:minecraft:entity>",
+        "<path:minecraft:nbt_path>",
+        "float",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result entity <target:minecraft:entity> <path:minecraft:nbt_path> float <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "entity",
+        "<target:minecraft:entity>",
+        "<path:minecraft:nbt_path>",
+        "int",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result entity <target:minecraft:entity> <path:minecraft:nbt_path> int <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "entity",
+        "<target:minecraft:entity>",
+        "<path:minecraft:nbt_path>",
+        "long",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result entity <target:minecraft:entity> <path:minecraft:nbt_path> long <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "entity",
+        "<target:minecraft:entity>",
+        "<path:minecraft:nbt_path>",
+        "short",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result entity <target:minecraft:entity> <path:minecraft:nbt_path> short <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "score",
+        "<targets:minecraft:score_holder>",
+        "<objective:minecraft:objective>"
+      ],
+      "usage": "execute store result score <targets:minecraft:score_holder> <objective:minecraft:objective> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "storage",
+        "<target:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>",
+        "byte",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result storage <target:minecraft:resource_location> <path:minecraft:nbt_path> byte <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "storage",
+        "<target:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>",
+        "double",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result storage <target:minecraft:resource_location> <path:minecraft:nbt_path> double <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "storage",
+        "<target:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>",
+        "float",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result storage <target:minecraft:resource_location> <path:minecraft:nbt_path> float <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "storage",
+        "<target:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>",
+        "int",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result storage <target:minecraft:resource_location> <path:minecraft:nbt_path> int <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "storage",
+        "<target:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>",
+        "long",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result storage <target:minecraft:resource_location> <path:minecraft:nbt_path> long <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "result",
+        "storage",
+        "<target:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>",
+        "short",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store result storage <target:minecraft:resource_location> <path:minecraft:nbt_path> short <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "block",
+        "<target:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>",
+        "byte",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success block <target:minecraft:block_pos> <path:minecraft:nbt_path> byte <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "block",
+        "<target:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>",
+        "double",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success block <target:minecraft:block_pos> <path:minecraft:nbt_path> double <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "block",
+        "<target:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>",
+        "float",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success block <target:minecraft:block_pos> <path:minecraft:nbt_path> float <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "block",
+        "<target:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>",
+        "int",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success block <target:minecraft:block_pos> <path:minecraft:nbt_path> int <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "block",
+        "<target:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>",
+        "long",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success block <target:minecraft:block_pos> <path:minecraft:nbt_path> long <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "block",
+        "<target:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>",
+        "short",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success block <target:minecraft:block_pos> <path:minecraft:nbt_path> short <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "bossbar",
+        "<id:minecraft:resource_location>",
+        "max"
+      ],
+      "usage": "execute store success bossbar <id:minecraft:resource_location> max -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "bossbar",
+        "<id:minecraft:resource_location>",
+        "value"
+      ],
+      "usage": "execute store success bossbar <id:minecraft:resource_location> value -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "entity",
+        "<target:minecraft:entity>",
+        "<path:minecraft:nbt_path>",
+        "byte",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success entity <target:minecraft:entity> <path:minecraft:nbt_path> byte <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "entity",
+        "<target:minecraft:entity>",
+        "<path:minecraft:nbt_path>",
+        "double",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success entity <target:minecraft:entity> <path:minecraft:nbt_path> double <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "entity",
+        "<target:minecraft:entity>",
+        "<path:minecraft:nbt_path>",
+        "float",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success entity <target:minecraft:entity> <path:minecraft:nbt_path> float <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "entity",
+        "<target:minecraft:entity>",
+        "<path:minecraft:nbt_path>",
+        "int",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success entity <target:minecraft:entity> <path:minecraft:nbt_path> int <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "entity",
+        "<target:minecraft:entity>",
+        "<path:minecraft:nbt_path>",
+        "long",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success entity <target:minecraft:entity> <path:minecraft:nbt_path> long <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "entity",
+        "<target:minecraft:entity>",
+        "<path:minecraft:nbt_path>",
+        "short",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success entity <target:minecraft:entity> <path:minecraft:nbt_path> short <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "score",
+        "<targets:minecraft:score_holder>",
+        "<objective:minecraft:objective>"
+      ],
+      "usage": "execute store success score <targets:minecraft:score_holder> <objective:minecraft:objective> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "storage",
+        "<target:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>",
+        "byte",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success storage <target:minecraft:resource_location> <path:minecraft:nbt_path> byte <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "storage",
+        "<target:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>",
+        "double",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success storage <target:minecraft:resource_location> <path:minecraft:nbt_path> double <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "storage",
+        "<target:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>",
+        "float",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success storage <target:minecraft:resource_location> <path:minecraft:nbt_path> float <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "storage",
+        "<target:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>",
+        "int",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success storage <target:minecraft:resource_location> <path:minecraft:nbt_path> int <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "storage",
+        "<target:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>",
+        "long",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success storage <target:minecraft:resource_location> <path:minecraft:nbt_path> long <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "store",
+        "success",
+        "storage",
+        "<target:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>",
+        "short",
+        "<scale:brigadier:double>"
+      ],
+      "usage": "execute store success storage <target:minecraft:resource_location> <path:minecraft:nbt_path> short <scale:brigadier:double> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "summon",
+        "<entity:minecraft:resource>"
+      ],
+      "usage": "execute summon <entity:minecraft:resource> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "biome",
+        "<pos:minecraft:block_pos>",
+        "<biome:minecraft:resource_or_tag>"
+      ],
+      "usage": "execute unless biome <pos:minecraft:block_pos> <biome:minecraft:resource_or_tag>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "biome",
+        "<pos:minecraft:block_pos>",
+        "<biome:minecraft:resource_or_tag>"
+      ],
+      "usage": "execute unless biome <pos:minecraft:block_pos> <biome:minecraft:resource_or_tag> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "block",
+        "<pos:minecraft:block_pos>",
+        "<block:minecraft:block_predicate>"
+      ],
+      "usage": "execute unless block <pos:minecraft:block_pos> <block:minecraft:block_predicate>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "block",
+        "<pos:minecraft:block_pos>",
+        "<block:minecraft:block_predicate>"
+      ],
+      "usage": "execute unless block <pos:minecraft:block_pos> <block:minecraft:block_predicate> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "blocks",
+        "<start:minecraft:block_pos>",
+        "<end:minecraft:block_pos>",
+        "<destination:minecraft:block_pos>",
+        "all"
+      ],
+      "usage": "execute unless blocks <start:minecraft:block_pos> <end:minecraft:block_pos> <destination:minecraft:block_pos> all",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "blocks",
+        "<start:minecraft:block_pos>",
+        "<end:minecraft:block_pos>",
+        "<destination:minecraft:block_pos>",
+        "all"
+      ],
+      "usage": "execute unless blocks <start:minecraft:block_pos> <end:minecraft:block_pos> <destination:minecraft:block_pos> all -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "blocks",
+        "<start:minecraft:block_pos>",
+        "<end:minecraft:block_pos>",
+        "<destination:minecraft:block_pos>",
+        "masked"
+      ],
+      "usage": "execute unless blocks <start:minecraft:block_pos> <end:minecraft:block_pos> <destination:minecraft:block_pos> masked",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "blocks",
+        "<start:minecraft:block_pos>",
+        "<end:minecraft:block_pos>",
+        "<destination:minecraft:block_pos>",
+        "masked"
+      ],
+      "usage": "execute unless blocks <start:minecraft:block_pos> <end:minecraft:block_pos> <destination:minecraft:block_pos> masked -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "data",
+        "block",
+        "<source:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>"
+      ],
+      "usage": "execute unless data block <source:minecraft:block_pos> <path:minecraft:nbt_path>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "data",
+        "block",
+        "<source:minecraft:block_pos>",
+        "<path:minecraft:nbt_path>"
+      ],
+      "usage": "execute unless data block <source:minecraft:block_pos> <path:minecraft:nbt_path> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "data",
+        "entity",
+        "<source:minecraft:entity>",
+        "<path:minecraft:nbt_path>"
+      ],
+      "usage": "execute unless data entity <source:minecraft:entity> <path:minecraft:nbt_path>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "data",
+        "entity",
+        "<source:minecraft:entity>",
+        "<path:minecraft:nbt_path>"
+      ],
+      "usage": "execute unless data entity <source:minecraft:entity> <path:minecraft:nbt_path> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "data",
+        "storage",
+        "<source:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>"
+      ],
+      "usage": "execute unless data storage <source:minecraft:resource_location> <path:minecraft:nbt_path>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "data",
+        "storage",
+        "<source:minecraft:resource_location>",
+        "<path:minecraft:nbt_path>"
+      ],
+      "usage": "execute unless data storage <source:minecraft:resource_location> <path:minecraft:nbt_path> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "dimension",
+        "<dimension:minecraft:dimension>"
+      ],
+      "usage": "execute unless dimension <dimension:minecraft:dimension>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "dimension",
+        "<dimension:minecraft:dimension>"
+      ],
+      "usage": "execute unless dimension <dimension:minecraft:dimension> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "entity",
+        "<entities:minecraft:entity>"
+      ],
+      "usage": "execute unless entity <entities:minecraft:entity>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "entity",
+        "<entities:minecraft:entity>"
+      ],
+      "usage": "execute unless entity <entities:minecraft:entity> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "function",
+        "<name:minecraft:function>"
+      ],
+      "usage": "execute unless function <name:minecraft:function> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "items",
+        "block",
+        "<source:minecraft:block_pos>",
+        "<slots:minecraft:slot_source>",
+        "<item_predicate:minecraft:item_predicate>"
+      ],
+      "usage": "execute unless items block <source:minecraft:block_pos> <slots:minecraft:slot_source> <item_predicate:minecraft:item_predicate>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "items",
+        "block",
+        "<source:minecraft:block_pos>",
+        "<slots:minecraft:slot_source>",
+        "<item_predicate:minecraft:item_predicate>"
+      ],
+      "usage": "execute unless items block <source:minecraft:block_pos> <slots:minecraft:slot_source> <item_predicate:minecraft:item_predicate> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "items",
+        "entity",
+        "<source:minecraft:entity>",
+        "<slots:minecraft:slot_source>",
+        "<item_predicate:minecraft:item_predicate>"
+      ],
+      "usage": "execute unless items entity <source:minecraft:entity> <slots:minecraft:slot_source> <item_predicate:minecraft:item_predicate>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "items",
+        "entity",
+        "<source:minecraft:entity>",
+        "<slots:minecraft:slot_source>",
+        "<item_predicate:minecraft:item_predicate>"
+      ],
+      "usage": "execute unless items entity <source:minecraft:entity> <slots:minecraft:slot_source> <item_predicate:minecraft:item_predicate> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "loaded",
+        "<pos:minecraft:block_pos>"
+      ],
+      "usage": "execute unless loaded <pos:minecraft:block_pos>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "loaded",
+        "<pos:minecraft:block_pos>"
+      ],
+      "usage": "execute unless loaded <pos:minecraft:block_pos> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "predicate",
+        "<predicate:minecraft:loot_predicate>"
+      ],
+      "usage": "execute unless predicate <predicate:minecraft:loot_predicate>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "predicate",
+        "<predicate:minecraft:loot_predicate>"
+      ],
+      "usage": "execute unless predicate <predicate:minecraft:loot_predicate> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "<",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute unless score <target:minecraft:score_holder> <targetObjective:minecraft:objective> < <source:minecraft:score_holder> <sourceObjective:minecraft:objective>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "<",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute unless score <target:minecraft:score_holder> <targetObjective:minecraft:objective> < <source:minecraft:score_holder> <sourceObjective:minecraft:objective> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "<=",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute unless score <target:minecraft:score_holder> <targetObjective:minecraft:objective> <= <source:minecraft:score_holder> <sourceObjective:minecraft:objective>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "<=",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute unless score <target:minecraft:score_holder> <targetObjective:minecraft:objective> <= <source:minecraft:score_holder> <sourceObjective:minecraft:objective> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "=",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute unless score <target:minecraft:score_holder> <targetObjective:minecraft:objective> = <source:minecraft:score_holder> <sourceObjective:minecraft:objective>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "=",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute unless score <target:minecraft:score_holder> <targetObjective:minecraft:objective> = <source:minecraft:score_holder> <sourceObjective:minecraft:objective> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        ">",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute unless score <target:minecraft:score_holder> <targetObjective:minecraft:objective> > <source:minecraft:score_holder> <sourceObjective:minecraft:objective>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        ">",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute unless score <target:minecraft:score_holder> <targetObjective:minecraft:objective> > <source:minecraft:score_holder> <sourceObjective:minecraft:objective> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        ">=",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute unless score <target:minecraft:score_holder> <targetObjective:minecraft:objective> >= <source:minecraft:score_holder> <sourceObjective:minecraft:objective>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        ">=",
+        "<source:minecraft:score_holder>",
+        "<sourceObjective:minecraft:objective>"
+      ],
+      "usage": "execute unless score <target:minecraft:score_holder> <targetObjective:minecraft:objective> >= <source:minecraft:score_holder> <sourceObjective:minecraft:objective> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "matches",
+        "<range:minecraft:int_range>"
+      ],
+      "usage": "execute unless score <target:minecraft:score_holder> <targetObjective:minecraft:objective> matches <range:minecraft:int_range>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "score",
+        "<target:minecraft:score_holder>",
+        "<targetObjective:minecraft:objective>",
+        "matches",
+        "<range:minecraft:int_range>"
+      ],
+      "usage": "execute unless score <target:minecraft:score_holder> <targetObjective:minecraft:objective> matches <range:minecraft:int_range> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "slots",
+        "block",
+        "<source:minecraft:block_pos>",
+        "<slots:minecraft:slot_source>"
+      ],
+      "usage": "execute unless slots block <source:minecraft:block_pos> <slots:minecraft:slot_source>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "slots",
+        "block",
+        "<source:minecraft:block_pos>",
+        "<slots:minecraft:slot_source>"
+      ],
+      "usage": "execute unless slots block <source:minecraft:block_pos> <slots:minecraft:slot_source> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "slots",
+        "entity",
+        "<source:minecraft:entity>",
+        "<slots:minecraft:slot_source>"
+      ],
+      "usage": "execute unless slots entity <source:minecraft:entity> <slots:minecraft:slot_source>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "slots",
+        "entity",
+        "<source:minecraft:entity>",
+        "<slots:minecraft:slot_source>"
+      ],
+      "usage": "execute unless slots entity <source:minecraft:entity> <slots:minecraft:slot_source> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "stopwatch",
+        "<id:minecraft:resource_location>",
+        "<range:minecraft:float_range>"
+      ],
+      "usage": "execute unless stopwatch <id:minecraft:resource_location> <range:minecraft:float_range>",
+      "redirect": [
+        "execute"
+      ]
+    },
+    {
+      "tokens": [
+        "execute",
+        "unless",
+        "stopwatch",
+        "<id:minecraft:resource_location>",
+        "<range:minecraft:float_range>"
+      ],
+      "usage": "execute unless stopwatch <id:minecraft:resource_location> <range:minecraft:float_range> -> execute",
+      "redirect": [
+        "execute"
+      ]
+    }
+  ]
+}
