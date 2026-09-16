@@ -1,0 +1,10 @@
+pack demo.shrine;
+
+@Chain("Glow")
+@Repeat
+@AlwaysActive
+public chain Glow {
+    title(Players.all(), Title.TITLE, "MINC");
+    tellraw(Players.all(), Text.raw("§6Gold Shrine imported"));
+    run "say MINC shrine online";
+}

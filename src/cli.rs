@@ -49,7 +49,7 @@ minc — MincScript compiler
   minc check [dir]
   minc build [--out dist/] [--emit functions-only]
   minc inspect <file.mincb|.mar> [--chain Name] [--strict]
-  minc dump <file.mincb|.mar|--project> --commands
+  minc dump <file.mincb|.mar|--project> --commands|--json
   minc layout <chain> --layout stack --origin x y z --facing up [--relative]
   minc place <file.mincb|.mar> [--out dist/place]
 "
@@ -297,17 +297,19 @@ fn cmd_inspect(it: &mut impl Iterator<Item = String>) -> i32 {
 
 fn cmd_dump(it: &mut impl Iterator<Item = String>) -> i32 {
     let mut commands = false;
+    let mut json = false;
     let mut path: Option<PathBuf> = None;
     for a in it {
         match a.as_str() {
             "--commands" => commands = true,
+            "--json" => json = true,
             "--project" => path = None,
             s if !s.starts_with('-') => path = Some(PathBuf::from(a)),
             _ => {}
         }
     }
-    if !commands {
-        eprintln!("minc dump --commands");
+    if !commands && !json {
+        eprintln!("minc dump --commands | --json");
         return 2;
     }
     if let Some(p) = path {
@@ -331,7 +333,11 @@ fn cmd_dump(it: &mut impl Iterator<Item = String>) -> i32 {
                 eprintln!("not a MINCB file");
                 return 1;
             };
-            print!("{}", mincb::dump_commands_from_image(&image));
+            if json {
+                print!("{}", mincb::dump_image_json(&image));
+            } else {
+                print!("{}", mincb::dump_commands_from_image(&image));
+            }
             return 0;
         }
     }
@@ -345,7 +351,11 @@ fn cmd_dump(it: &mut impl Iterator<Item = String>) -> i32 {
     match load_and_merge(&root) {
         Ok((config, unit)) => match compile_unit(&unit, &config) {
             Ok(art) => {
-                print!("{}", crate::lower::dump_commands(&art.lowered));
+                if json {
+                    print!("{}", mincb::dump_image_json(&art.image));
+                } else {
+                    print!("{}", crate::lower::dump_commands(&art.lowered));
+                }
                 0
             }
             Err(diags) => {

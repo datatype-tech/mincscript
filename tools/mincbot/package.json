@@ -1,0 +1,24 @@
+{
+  "name": "mincbot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Java-edition MincBot: MAR/MINCB import into a live world (FastBuilder-style, chunked).",
+  "bin": {
+    "mincbot": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "demo": "node src/index.js demo",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "flying-squid": "^1.11.0",
+    "minecraft-data": "^3.84.0",
+    "mineflayer": "^4.32.0",
+    "pngjs": "^7.0.0",
+    "vec3": "^0.1.8"
+  }
+}

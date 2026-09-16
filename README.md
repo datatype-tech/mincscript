@@ -15,9 +15,11 @@ Implemented, starting from the lexer:
 - **Check** — private fields and methods stay inside their class
 - **Extract** — stable score/tag ids (`m00`, `t0a`, …) for MINCB `SYMB`
 - **Lower** — dummy scores, tags, `execute` (edition-specific), chain flatten, stack/linear/snake/box layouts
-- **CLI** — `new`, `check`, `build`, `inspect`, `dump --commands`, `layout`
+- **CLI** — `new`, `check`, `build`, `inspect`, `dump --commands|--json`, `layout`, `place`
+- **`.mar`** — JAR-like ZIP (`META-INF/MANIFEST.MF` + `pack.mincb`) with edition / game version
+- **MincBot** — Java-only mineflayer importer (`tools/mincbot`): version-gates a `.mar`, chunk-greedy `/fill` like FastBuilder, flying-squid mini server, headless pngjs screenshots
 
-A buildable 地铁逃生 sketch is [`examples/metro-escape/`](examples/metro-escape/). Builtins, `temp`, and `List.of` are in [`examples/tutorial-kit/`](examples/tutorial-kit/) and [`docs/language/06-tutorial.md`](docs/language/06-tutorial.md).
+A buildable 地铁逃生 sketch is [`examples/metro-escape/`](examples/metro-escape/). Builtins, `temp`, and `List.of` are in [`examples/tutorial-kit/`](examples/tutorial-kit/) and [`docs/language/06-tutorial.md`](docs/language/06-tutorial.md). The visible Java import demo is [`examples/gold-shrine/`](examples/gold-shrine/) (wool **MINC** letters on a gold platform + beacon).
 
 ## Build
 
@@ -26,6 +28,8 @@ cargo test
 cargo run --bin minc -- check examples/metro-escape
 cargo run --bin minc -- build examples/metro-escape --out dist/
 cargo run --bin minc -- dump --commands
+cargo run --bin minc -- dump examples/gold-shrine/dist/gold-shrine.mar --json
+node tools/mincbot/src/index.js demo --out tools/mincbot/out
 ```
 
 `minc new my-pack --edition bedrock --version 1.21.70` writes `minc.toml` plus a clock chain.

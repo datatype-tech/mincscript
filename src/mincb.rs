@@ -1106,6 +1106,102 @@ pub fn symb_name(image: &MincbImage, id: u16) -> String {
         .unwrap_or_else(|| id.to_string())
 }
 
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// JSON snapshot of a MINCB image for MincBot / tooling.
+pub fn dump_image_json(image: &MincbImage) -> String {
+    let edition = image.edition.as_str();
+    let mut out = String::from("{\n");
+    out.push_str(&format!(
+        "  \"edition\":\"{edition}\",\n  \"game_version\":\"{}\",\n  \"pack\":\"{}\",\n  \"origin\":[{},{},{}],\n  \"score_revision\":{},\n",
+        json_escape(&image.game_version),
+        json_escape(&image.pack),
+        image.origin[0],
+        image.origin[1],
+        image.origin[2],
+        image.score_revision
+    ));
+    out.push_str(&format!(
+        "  \"meta\":{},\n",
+        if image.meta_json.is_empty() {
+            "{}".into()
+        } else {
+            image.meta_json.clone()
+        }
+    ));
+    out.push_str("  \"world_blocks\":[\n");
+    for (i, b) in image.world_blocks.iter().enumerate() {
+        if i > 0 {
+            out.push_str(",\n");
+        }
+        out.push_str(&format!(
+            "    {{\"x\":{},\"y\":{},\"z\":{},\"block\":\"{}\"}}",
+            b.x,
+            b.y,
+            b.z,
+            json_escape(&b.block)
+        ));
+    }
+    out.push_str("\n  ],\n  \"command_blocks\":[\n");
+    for (i, b) in image.command_blocks.iter().enumerate() {
+        if i > 0 {
+            out.push_str(",\n");
+        }
+        out.push_str(&format!(
+            "    {{\"x\":{},\"y\":{},\"z\":{},\"facing\":{},\"mode\":{},\"flags\":{},\"delay\":{},\"command\":\"{}\"}}",
+            b.x,
+            b.y,
+            b.z,
+            b.facing,
+            b.mode,
+            b.flags,
+            b.delay_ticks,
+            json_escape(&b.command)
+        ));
+    }
+    out.push_str("\n  ],\n  \"containers\":[\n");
+    for (i, c) in image.containers.iter().enumerate() {
+        if i > 0 {
+            out.push_str(",\n");
+        }
+        out.push_str(&format!(
+            "    {{\"x\":{},\"y\":{},\"z\":{},\"block\":\"{}\",\"facing\":{},\"slots\":[",
+            c.x,
+            c.y,
+            c.z,
+            json_escape(&c.block),
+            c.facing
+        ));
+        for (j, s) in c.slots.iter().enumerate() {
+            if j > 0 {
+                out.push(',');
+            }
+            out.push_str(&format!(
+                "{{\"slot\":{},\"item\":\"{}\",\"count\":{}}}",
+                s.slot,
+                json_escape(&s.item),
+                s.count
+            ));
+        }
+        out.push_str("]}");
+    }
+    out.push_str("\n  ]\n}\n");
+    out
+}
+
 /// Print FUNC bodies and CBLK command strings from a decoded image.
 pub fn dump_commands_from_image(image: &MincbImage) -> String {
     let mut out = String::new();

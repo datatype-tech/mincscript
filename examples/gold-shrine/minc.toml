@@ -1,0 +1,22 @@
+[project]
+name = "gold-shrine"
+pack = "demo.shrine"
+score_revision = 1
+
+[target]
+edition = "java"
+game_version = "1.21.1"
+
+[emit]
+mincb = true
+functions = true
+datapack_or_behavior_pack = true
+
+[world]
+dimension = "overworld"
+origin = [0, 64, 0]
+
+[chains]
+default_layout = "stack"
+default_facing = "up"
+clock = "Glow"

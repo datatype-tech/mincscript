@@ -953,4 +953,36 @@ public chain C { cmd("say mar"); }
         assert!(man.contains("Game-Version: 1.21.70"));
         assert!(man.contains("Minc-Format: 1"));
     }
+
+    #[test]
+    fn compiles_gold_shrine_java_mar() {
+        let root = std::path::Path::new("examples/gold-shrine");
+        let (config, unit) = crate::project::load_and_merge(root).expect("load");
+        assert_eq!(config.edition, crate::config::Edition::Java);
+        assert_eq!(config.game_version, "1.21.1");
+        let art = crate::compile::compile_unit(&unit, &config).expect("compile");
+        assert!(!art.mincb.is_empty());
+        assert!(!art.mar.is_empty());
+        let opened = crate::mar::open(&art.mar).expect("mar");
+        assert_eq!(opened.edition(), Some("java"));
+        assert_eq!(opened.game_version(), Some("1.21.1"));
+        assert!(
+            art.image.meta_json.contains("gold_block"),
+            "{}",
+            art.image.meta_json
+        );
+        assert!(art
+            .image
+            .world_blocks
+            .iter()
+            .any(|b| b.block.contains("beacon")));
+        assert!(art
+            .image
+            .containers
+            .iter()
+            .any(|c| c.block.contains("chest")));
+        let dump = crate::lower::dump_commands(&art.lowered);
+        assert!(dump.contains("say MINC shrine online"), "{dump}");
+        assert!(dump.contains("title") || dump.contains("tellraw"), "{dump}");
+    }
 }
