@@ -185,31 +185,61 @@ struct Fill {
 }
 
 fn parse_fills(meta: &str) -> Vec<Fill> {
-    let mut out = Vec::new();
     let Some(idx) = meta.find("\"fills\"") else {
-        return out;
+        return Vec::new();
     };
     let rest = &meta[idx..];
     let Some(start) = rest.find('[') else {
-        return out;
+        return Vec::new();
     };
-    let rest = &rest[start + 1..];
-    let end = rest.find(']').unwrap_or(rest.len());
-    let inner = &rest[..end];
-    if inner.trim().is_empty() {
-        return out;
-    }
-    for obj in inner.split("},{") {
-        let block = json_str(obj, "block").unwrap_or_default();
-        if block.is_empty() {
-            continue;
+    let mut depth = 0i32;
+    let mut end = None;
+    for (i, ch) in rest.char_indices().skip(start) {
+        match ch {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(i);
+                    break;
+                }
+            }
+            _ => {}
         }
-        out.push(Fill {
-            from: json_i3(obj, "from").unwrap_or([0, 0, 0]),
-            to: json_i3(obj, "to").unwrap_or([0, 0, 0]),
-            block,
-            replace: json_str(obj, "replace").unwrap_or_default(),
-        });
+    }
+    let Some(end) = end else {
+        return Vec::new();
+    };
+    let arr = &rest[start..=end];
+    let mut out = Vec::new();
+    let chars: Vec<char> = arr.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '{' {
+            let mut d = 1;
+            let from = i;
+            i += 1;
+            while i < chars.len() && d > 0 {
+                if chars[i] == '{' {
+                    d += 1;
+                } else if chars[i] == '}' {
+                    d -= 1;
+                }
+                i += 1;
+            }
+            let obj: String = chars[from..i].iter().collect();
+            let block = json_str(&obj, "block").unwrap_or_default();
+            if !block.is_empty() {
+                out.push(Fill {
+                    from: json_i3(&obj, "from").unwrap_or([0, 0, 0]),
+                    to: json_i3(&obj, "to").unwrap_or([0, 0, 0]),
+                    block,
+                    replace: json_str(&obj, "replace").unwrap_or_default(),
+                });
+            }
+        } else {
+            i += 1;
+        }
     }
     out
 }

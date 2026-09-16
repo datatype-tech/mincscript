@@ -54,7 +54,7 @@ function ensureGoldShrineMar(root) {
   }
   const r = spawnSync(
     "cargo",
-    ["run", "--quiet", "--bin", "minc", "--", "build", "examples/gold-shrine", "--out", "examples/gold-shrine/dist"],
+    ["run", "--quiet", "--bin", "minc", "--", "build", "examples/gold-shrine", "--out", "dist"],
     { cwd: root, encoding: "utf8" }
   );
   if (r.status !== 0) {
@@ -129,9 +129,10 @@ async function runImport(file, flags) {
         } catch {
           mcData = null;
         }
+        const registry = serverHandle.serv.registry || mcData;
         let injected = 0;
         for (const op of plan.ops) {
-          injected += applyOpToFlyingSquid(serverHandle.serv, mcData, op);
+          injected += await applyOpToFlyingSquid(serverHandle.serv, registry, op);
         }
         report.server.injected = injected;
         try {

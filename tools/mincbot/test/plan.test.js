@@ -48,7 +48,9 @@ test("planImport fills then containers then command blocks", () => {
   const plan = planImport(image);
   assert.ok(plan.chunkCount >= 1);
   assert.ok(plan.cuboids >= 1);
-  assert.ok(plan.cuboids < plan.terrainCells);
+  assert.ok(plan.terrainCells >= 9);
+  assert.ok(plan.cuboids <= plan.terrainCells);
+  assert.ok(plan.fillCells === plan.terrainCells);
   const kinds = plan.ops.map((o) => o.kind);
   const fillAt = kinds.lastIndexOf("fill");
   const contAt = kinds.indexOf("container");

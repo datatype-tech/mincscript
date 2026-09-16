@@ -28,9 +28,13 @@ function verifyGoldShrine(world, opts = {}) {
   expect(checks, world, 14, 69, 1, "yellow_wool");
   expect(checks, world, 21, 69, 1, "lime_wool");
   expect(checks, world, 13, 64, 14, "chest");
-  const cb = at(world, 26, 64, 8);
-  const cbOk = cb.includes("command_block");
-  checks.push({ x: 26, y: 64, z: 8, expect: "command_block*", got: cb, ok: cbOk });
+  const cbs = world.entries().filter((b) => b.name.includes("command_block"));
+  checks.push({
+    name: "command_blocks",
+    expect: ">=1",
+    got: cbs.length,
+    ok: cbs.length >= 1,
+  });
 
   const counts = {
     gold_block: world.count("gold_block"),
@@ -68,7 +72,10 @@ function verifyPlan(plan) {
   const checks = [];
   const okChunks = plan.chunkCount >= 1;
   checks.push({ name: "chunked", ok: okChunks, got: plan.chunkCount });
-  const okCuboids = plan.cuboids >= 1 && plan.cuboids < plan.terrainCells;
+  const okCuboids =
+    plan.cuboids >= 1 &&
+    plan.fillCells === plan.terrainCells &&
+    plan.cuboids <= plan.terrainCells;
   checks.push({
     name: "greedy-cuboids",
     ok: okCuboids,

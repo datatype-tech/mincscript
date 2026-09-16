@@ -49,7 +49,8 @@ test("chunked import of a shrine-shaped image verifies", () => {
   assert.equal(planV.ok, true, JSON.stringify(planV));
   const v = verifyGoldShrine(world, { letterMin: 1 });
   assert.equal(v.ok, true, JSON.stringify(v.failed));
-  assert.ok(plan.compression > 2);
+  assert.ok(plan.terrainCells > 50, JSON.stringify(planV));
+  assert.ok(plan.compression > 2, JSON.stringify(planV));
 });
 
 test("isometric and front renders produce non-empty pngs", () => {

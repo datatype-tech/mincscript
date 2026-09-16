@@ -81,39 +81,36 @@ function commandsForPlan(plan) {
 
 function blockStateId(mcData, name) {
   const n = normalizeBlock(name);
-  if (!mcData || !mcData.blocksByName) {
-    return 1;
-  }
-  const b = mcData.blocksByName[n] || mcData.blocksByName.stone;
+  const table = (mcData && (mcData.blocksByName || (mcData.registry && mcData.registry.blocksByName))) || {};
+  const b = table[n] || table.stone;
   if (!b) {
     return 1;
   }
   if (b.defaultState != null) {
     return b.defaultState;
   }
+  if (b.minStateId != null) {
+    return b.minStateId;
+  }
   return b.id;
 }
 
-function applyOpToFlyingSquid(serv, mcData, op) {
+async function applyOpToFlyingSquid(serv, mcData, op) {
   if (!serv || typeof serv.setBlock !== "function") {
     return 0;
   }
-  const world = serv.overworld || (serv.worlds && serv.worlds[0]);
+  const world = serv.overworld;
   if (!world) {
     return 0;
   }
+  const registry = mcData || serv.registry;
   let n = 0;
-  const put = (x, y, z, name) => {
+  const put = async (x, y, z, name) => {
     try {
-      serv.setBlock(world, vec3(x, y, z), blockStateId(mcData, name));
+      await serv.setBlock(world, vec3(x, y, z), blockStateId(registry, name));
       n++;
     } catch {
-      try {
-        serv.setBlock(vec3(x, y, z), blockStateId(mcData, name));
-        n++;
-      } catch {
-        /* flying-squid API varies by version */
-      }
+      /* flying-squid API / unloaded chunk */
     }
   };
   if (op.kind === "fill") {
@@ -126,13 +123,13 @@ function applyOpToFlyingSquid(serv, mcData, op) {
     for (let y = y0; y <= y1; y++) {
       for (let z = z0; z <= z1; z++) {
         for (let x = x0; x <= x1; x++) {
-          put(x, y, z, op.block);
+          await put(x, y, z, op.block);
         }
       }
     }
     return n;
   }
-  put(op.x, op.y, op.z, op.block);
+  await put(op.x, op.y, op.z, op.block);
   return n;
 }
 

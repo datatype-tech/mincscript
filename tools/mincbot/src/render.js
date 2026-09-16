@@ -112,7 +112,7 @@ function skyFill(png) {
 
 // 5x7 caps for overlay labels.
 const FONT = {
-  " ": [],
+  " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
   A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
   B: ["11110", "10001", "11110", "10001", "10001", "10001", "11110"],
   C: ["01110", "10001", "10000", "10000", "10000", "10001", "01110"],
@@ -154,12 +154,13 @@ const FONT = {
 function drawText(png, x, y, text, rgb = [20, 24, 32], scale = 2) {
   let cx = x;
   for (const ch of text.toUpperCase()) {
-    const glyph = FONT[ch];
-    if (!glyph) {
+    const glyph = FONT[ch] || FONT[" "];
+    if (!glyph || glyph.length < 7) {
       cx += 6 * scale;
       continue;
     }
     for (let gy = 0; gy < 7; gy++) {
+      const row = glyph[gy] || "00000";
       for (let gx = 0; gx < 5; gx++) {
         if (glyph[gy][gx] === "1") {
           for (let oy = 0; oy < scale; oy++) {

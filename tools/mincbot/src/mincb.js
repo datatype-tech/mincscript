@@ -260,6 +260,25 @@ function parseFills(meta) {
   if (!meta) {
     return [];
   }
+  try {
+    const obj = typeof meta === "string" ? JSON.parse(meta) : meta;
+    if (!obj || !Array.isArray(obj.fills)) {
+      return [];
+    }
+    return obj.fills
+      .map((f) => ({
+        from: Array.isArray(f.from) ? f.from.map(Number) : [0, 0, 0],
+        to: Array.isArray(f.to) ? f.to.map(Number) : [0, 0, 0],
+        block: f.block || "",
+        replace: f.replace || "",
+      }))
+      .filter((f) => f.block);
+  } catch {
+    return parseFillsLoose(meta);
+  }
+}
+
+function parseFillsLoose(meta) {
   const idx = meta.indexOf('"fills"');
   if (idx < 0) {
     return [];
@@ -268,25 +287,32 @@ function parseFills(meta) {
   if (start < 0) {
     return [];
   }
-  const end = meta.indexOf("]", start);
-  const inner = meta.slice(start + 1, end < 0 ? meta.length : end).trim();
-  if (!inner) {
+  let depth = 0;
+  let end = -1;
+  for (let i = start; i < meta.length; i++) {
+    if (meta[i] === "[") {
+      depth++;
+    } else if (meta[i] === "]") {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  if (end < 0) {
     return [];
   }
-  const out = [];
-  for (const obj of inner.split("},{")) {
-    const block = jsonStr(obj, "block");
-    if (!block) {
-      continue;
-    }
-    out.push({
-      from: jsonI3(obj, "from") || [0, 0, 0],
-      to: jsonI3(obj, "to") || [0, 0, 0],
-      block,
-      replace: jsonStr(obj, "replace") || "",
-    });
+  try {
+    return JSON.parse(meta.slice(start, end + 1)).map((f) => ({
+      from: f.from || [0, 0, 0],
+      to: f.to || [0, 0, 0],
+      block: f.block || "",
+      replace: f.replace || "",
+    }));
+  } catch {
+    return [];
   }
-  return out;
 }
 
 function jsonStr(obj, key) {

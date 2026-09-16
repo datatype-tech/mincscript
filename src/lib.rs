@@ -984,5 +984,16 @@ public chain C { cmd("say mar"); }
         let dump = crate::lower::dump_commands(&art.lowered);
         assert!(dump.contains("say MINC shrine online"), "{dump}");
         assert!(dump.contains("title") || dump.contains("tellraw"), "{dump}");
+        let place = crate::place::install_functions(&art.image);
+        let world = place
+            .values()
+            .find(|b| b.contains("fill ") && b.contains("gold_block"))
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            world.contains("fill 0 62 0 26 62 16 stone_bricks"),
+            "{world}"
+        );
+        assert!(world.contains("fill 0 63 0 26 63 16 gold_block"), "{world}");
     }
 }

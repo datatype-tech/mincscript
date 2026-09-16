@@ -5,7 +5,7 @@ world GoldShrine {
     origin (0, 64, 0);
     dimension overworld;
     tickingArea "shrine" circle (13, 64, 8) r=3 preload;
-    chain Glow at (26, 64, 8) layout stack facing up;
+    chain Glow at (26, 0, 8) layout stack facing up;
     clock Glow;
     include place Shrine;
 }

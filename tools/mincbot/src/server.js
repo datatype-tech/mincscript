@@ -1,29 +1,27 @@
 //! Headless Java mini-server via flying-squid (PrismarineJS).
 //! Falls back to the in-memory voxel world if the protocol server cannot boot.
 
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-
-const CANDIDATE_VERSIONS = ["1.21.1", "1.20.4", "1.20.1", "1.16.5", "1.8.9"];
+const CANDIDATE_VERSIONS = ["1.21.1", "1.21.4", "1.20.4", "1.16.5"];
 
 function tryCreate(options) {
   const flyingSquid = require("flying-squid");
-  const create = flyingSquid.createMCServer || flyingSquid;
-  return create(options);
+  return flyingSquid.createMCServer(options);
 }
 
 function startMiniServer(opts = {}) {
   const port = opts.port || 25565;
   const requested = opts.version || "1.21.1";
-  const worldFolder =
-    opts.worldFolder || path.join(os.tmpdir(), `mincbot-world-${process.pid}`);
-  fs.mkdirSync(worldFolder, { recursive: true });
-
   const versions = [requested, ...CANDIDATE_VERSIONS.filter((v) => v !== requested)];
   const errors = [];
 
   return new Promise((resolve) => {
+    try {
+      require.resolve("flying-squid");
+    } catch {
+      resolve({ ok: false, reason: "flying-squid not installed", port });
+      return;
+    }
+
     const tryNext = (i) => {
       if (i >= versions.length) {
         resolve({
@@ -43,18 +41,19 @@ function startMiniServer(opts = {}) {
           logging: false,
           gameMode: 1,
           difficulty: 0,
-          worldFolder,
-          generation: {
-            name: "superflat",
-            options: { worldHeight: 80 },
-          },
+          worldFolder: null,
+          generation: { name: "superflat", options: {} },
           kickTimeout: 10000,
           plugins: {},
-          "view-distance": 6,
+          "view-distance": 4,
           "everybody-op": true,
-          "max-entities": 50,
+          "max-entities": 32,
           version,
           motd: "MincBot gold-shrine",
+          "player-list-text": {
+            header: { text: "MincBot" },
+            footer: { text: "gold-shrine" },
+          },
         });
       } catch (e) {
         errors.push(e);
@@ -74,36 +73,30 @@ function startMiniServer(opts = {}) {
           serv,
           version,
           port,
-          worldFolder,
           ...extra,
         });
       };
+      const fail = (e) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        stopServer({ serv });
+        errors.push(e);
+        tryNext(i + 1);
+      };
 
-      const timer = setTimeout(() => finish({ assumed: true }), 8000);
+      const timer = setTimeout(() => finish({ assumed: true }), 12000);
+      if (typeof serv.waitForReady === "function") {
+        serv.waitForReady(10000).then(() => finish()).catch(fail);
+      }
       if (serv && typeof serv.on === "function") {
+        serv.on("ready", () => finish());
         serv.on("listening", () => finish());
-        serv.on("error", (e) => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          clearTimeout(timer);
-          try {
-            stopServer({ serv });
-          } catch {
-            /* ignore */
-          }
-          errors.push(e);
-          tryNext(i + 1);
-        });
+        serv.on("error", fail);
       }
     };
-    try {
-      require.resolve("flying-squid");
-    } catch (e) {
-      resolve({ ok: false, reason: "flying-squid not installed", port });
-      return;
-    }
     tryNext(0);
   });
 }
@@ -114,8 +107,9 @@ function stopServer(handle) {
   }
   const serv = handle.serv;
   try {
-    if (typeof serv.quit === "function") {
-      serv.quit();
+    if (typeof serv.destroy === "function") {
+      Promise.resolve(serv.destroy()).catch(() => {});
+      return;
     }
   } catch {
     /* ignore */
