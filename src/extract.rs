@@ -427,6 +427,27 @@ fn collect_gamerules(stmts: &[Stmt], out: &mut Vec<(String, String)>) {
                 collect_gamerules_expr(iter, out);
                 collect_gamerules(body, out);
             }
+            StmtKind::While { cond, body } => {
+                collect_gamerules_expr(cond, out);
+                collect_gamerules(body, out);
+            }
+            StmtKind::For {
+                init,
+                cond,
+                step,
+                body,
+            } => {
+                if let Some(init) = init {
+                    collect_gamerules(std::slice::from_ref(init.as_ref()), out);
+                }
+                if let Some(cond) = cond {
+                    collect_gamerules_expr(cond, out);
+                }
+                if let Some(step) = step {
+                    collect_gamerules_expr(step, out);
+                }
+                collect_gamerules(body, out);
+            }
             StmtKind::Context { body, .. } => collect_gamerules(body, out),
             StmtKind::Switch {
                 expr,
@@ -480,7 +501,18 @@ fn collect_gamerules_expr(expr: &Expr, out: &mut Vec<(String, String)>) {
                 collect_gamerules_expr(a, out);
             }
         }
-        ExprKind::Unary { expr, .. } => collect_gamerules_expr(expr, out),
+        ExprKind::Unary { expr, .. } | ExprKind::Update { expr, .. } => {
+            collect_gamerules_expr(expr, out)
+        }
+        ExprKind::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            collect_gamerules_expr(cond, out);
+            collect_gamerules_expr(then_expr, out);
+            collect_gamerules_expr(else_expr, out);
+        }
         ExprKind::Binary { lhs, rhs, .. } => {
             collect_gamerules_expr(lhs, out);
             collect_gamerules_expr(rhs, out);
@@ -513,7 +545,15 @@ fn collect_labels(stmts: &[Stmt]) -> Vec<String> {
                     out.extend(collect_labels(e));
                 }
             }
-            StmtKind::Foreach { body, .. } | StmtKind::Context { body, .. } => {
+            StmtKind::Foreach { body, .. }
+            | StmtKind::Context { body, .. }
+            | StmtKind::While { body, .. } => {
+                out.extend(collect_labels(body));
+            }
+            StmtKind::For { init, body, .. } => {
+                if let Some(init) = init {
+                    out.extend(collect_labels(std::slice::from_ref(init.as_ref())));
+                }
                 out.extend(collect_labels(body));
             }
             StmtKind::Switch { arms, default, .. } => {
@@ -531,8 +571,11 @@ fn collect_labels(stmts: &[Stmt]) -> Vec<String> {
 }
 
 fn kind_of_field(field: &FieldDef) -> Option<SymbolKind> {
-    match field.ty {
+    match &field.ty {
         TypeRef::Boolean if !field.is_static => Some(SymbolKind::Tag),
+        TypeRef::Named(p) if p.parts.last().map(|s| s.as_str()) == Some("Tag") => {
+            Some(SymbolKind::Tag)
+        }
         TypeRef::Int | TypeRef::Boolean => Some(SymbolKind::Objective),
         _ => None,
     }

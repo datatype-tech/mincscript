@@ -86,6 +86,7 @@ enum ConstVal {
     Item(ItemStack),
     Pos(String),
     List(Vec<ConstVal>),
+    Tag(String),
 }
 
 #[derive(Clone, Debug)]
@@ -313,6 +314,14 @@ impl<'a> Lower<'a> {
             }
         }
 
+        for f in &mut functions {
+            f.commands = crate::opt::optimize(std::mem::take(&mut f.commands));
+        }
+        for c in &mut chains {
+            c.commands = crate::opt::optimize_pairs(std::mem::take(&mut c.commands));
+        }
+        setup = crate::opt::optimize(setup);
+
         Lowered {
             functions,
             chains,
@@ -448,7 +457,10 @@ impl<'a> Lower<'a> {
                     out.extend(self.lower_block(std::slice::from_ref(inner.as_ref())));
                 }
                 StmtKind::Local {
-                    name, init, ty, is_temp,
+                    name,
+                    init,
+                    ty,
+                    is_temp,
                 } => {
                     self.bind_local(name, ty, init.as_ref(), *is_temp);
                 }
@@ -602,6 +614,13 @@ impl<'a> Lower<'a> {
                 }
                 vec![s]
             }
+            StmtKind::While { cond, body } => self.lower_while(cond, body),
+            StmtKind::For {
+                init,
+                cond,
+                step,
+                body,
+            } => self.lower_for(init.as_deref(), cond.as_ref(), step.as_ref(), body),
             StmtKind::Return(_) | StmtKind::Label(_) | StmtKind::Local { .. } => Vec::new(),
         }
     }
@@ -611,6 +630,16 @@ impl<'a> Lower<'a> {
             if let Some(e) = self.locals_expr.get(n).cloned() {
                 return self.lower_assign(target, op, &e);
             }
+        }
+        if let ExprKind::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } = &value.kind
+        {
+            let t = self.lower_assign(target, op, then_expr);
+            let e = self.lower_assign(target, op, else_expr);
+            return self.emit_if(cond, t, e);
         }
         if let Some((holder, field)) = self.lvalue(target) {
             match field.kind {
@@ -754,6 +783,27 @@ impl<'a> Lower<'a> {
 
     fn lower_expr_stmt(&mut self, expr: &Expr) -> Vec<String> {
         match &expr.kind {
+            ExprKind::Update { expr, delta, .. } => {
+                let op = if *delta >= 0 {
+                    AssignOp::PlusEq
+                } else {
+                    AssignOp::MinusEq
+                };
+                let n = Expr::new(
+                    expr.span.clone(),
+                    ExprKind::Int(delta.unsigned_abs() as i64),
+                );
+                self.lower_assign(expr, op, &n)
+            }
+            ExprKind::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                let t = self.lower_expr_stmt(then_expr);
+                let e = self.lower_expr_stmt(else_expr);
+                self.emit_if(cond, t, e)
+            }
             ExprKind::Call { callee, args } => {
                 if let ExprKind::Ident(name) = &callee.kind {
                     return self.lower_builtin_call(name, args, expr.span.clone());
@@ -761,6 +811,9 @@ impl<'a> Lower<'a> {
                 if let ExprKind::Field { base, name } = &callee.kind {
                     if name == "of" {
                         return Vec::new();
+                    }
+                    if name == "add" || name == "remove" {
+                        return self.lower_tag_mut(base, name, args);
                     }
                     if let ExprKind::Ident(recv) = &base.kind {
                         if recv == "World" && name == "gamerule" {
@@ -793,14 +846,18 @@ impl<'a> Lower<'a> {
                         if let Some(n) = args.get(1).and_then(|e| self.int_of(e)) {
                             item.count = n;
                         }
-                        return self.emit_cmd(expr.span.clone(), cmds::give(self.config.edition, &sel, &item));
+                        return self.emit_cmd(
+                            expr.span.clone(),
+                            cmds::give(self.config.edition, &sel, &item),
+                        );
                     }
                     if name == "kill" {
                         let sel = self
                             .selector_of(base)
                             .map(|s| s.emit())
                             .unwrap_or_else(|| "@s".into());
-                        return self.emit_cmd(expr.span.clone(), cmds::kill(self.config.edition, &sel));
+                        return self
+                            .emit_cmd(expr.span.clone(), cmds::kill(self.config.edition, &sel));
                     }
                     if name == "clear" {
                         let sel = self
@@ -970,10 +1027,7 @@ impl<'a> Lower<'a> {
     fn lower_effect(&mut self, sel: &str, args: &[Expr], span: crate::span::Span) -> Vec<String> {
         let name = enum_or_name(args.first()).to_lowercase();
         if name == "clear" || name.is_empty() {
-            return self.emit_cmd(
-                span,
-                cmds::effect_clear(self.config.edition, sel, None),
-            );
+            return self.emit_cmd(span, cmds::effect_clear(self.config.edition, sel, None));
         }
         let seconds = args.get(1).and_then(|e| self.int_of(e)).unwrap_or(30);
         let amp = args.get(2).and_then(|e| self.int_of(e)).unwrap_or(0);
@@ -1002,10 +1056,7 @@ impl<'a> Lower<'a> {
                 let sel = self.sel_arg(args, "@a");
                 let loc = enum_or_name(args.get(1)).to_lowercase();
                 let text = Self::text_arg(args, 2);
-                self.emit_cmd(
-                    span,
-                    cmds::title(self.config.edition, &sel, &loc, &text),
-                )
+                self.emit_cmd(span, cmds::title(self.config.edition, &sel, &loc, &text))
             }
             "tellraw" => {
                 let sel = self.sel_arg(args, "@a");
@@ -1120,10 +1171,7 @@ impl<'a> Lower<'a> {
                 let sel = self.sel_arg(args, "@s");
                 let ench = enum_or_name(args.get(1)).to_lowercase();
                 let level = args.get(2).and_then(|e| self.int_of(e)).unwrap_or(1);
-                self.emit_cmd(
-                    span,
-                    cmds::enchant(self.config.edition, &sel, &ench, level),
-                )
+                self.emit_cmd(span, cmds::enchant(self.config.edition, &sel, &ench, level))
             }
             "replaceItem" | "replaceitem" => {
                 let sel = self.sel_arg(args, "@s");
@@ -1209,15 +1257,222 @@ impl<'a> Lower<'a> {
     }
 
     fn int_of(&self, expr: &Expr) -> Option<i64> {
-        if let ExprKind::Ident(n) = &expr.kind {
-            if let Some(ConstVal::Int(v)) = self.consts.get(n) {
-                return Some(*v);
+        match &expr.kind {
+            ExprKind::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                let c = match &cond.kind {
+                    ExprKind::Bool(b) => *b,
+                    _ => self.int_of(cond)? != 0,
+                };
+                if c {
+                    self.int_of(then_expr)
+                } else {
+                    self.int_of(else_expr)
+                }
             }
-            if let Some(e) = self.locals_expr.get(n).cloned() {
-                return self.int_of(&e);
+            ExprKind::Ident(n) => {
+                if let Some(ConstVal::Int(v)) = self.consts.get(n) {
+                    return Some(*v);
+                }
+                if let Some(e) = self.locals_expr.get(n).cloned() {
+                    return self.int_of(&e);
+                }
+                eval_int(expr, &self.enums)
+            }
+            _ => eval_int(expr, &self.enums),
+        }
+    }
+
+    fn tag_of(&self, expr: &Expr) -> Option<String> {
+        match &expr.kind {
+            ExprKind::String(s) => Some(s.clone()),
+            ExprKind::Ident(n) => {
+                if let Some(ConstVal::Tag(t)) = self.consts.get(n) {
+                    return Some(t.clone());
+                }
+                if let Some(e) = self.locals_expr.get(n).cloned() {
+                    return self.tag_of(&e);
+                }
+                None
+            }
+            ExprKind::Call { callee, args } => {
+                if let ExprKind::Field { base, name } = &callee.kind {
+                    if name == "of" {
+                        if let ExprKind::Ident(recv) = &base.kind {
+                            if recv == "Tag" {
+                                return args.first().and_then(string_lit);
+                            }
+                        }
+                    }
+                }
+                None
+            }
+            ExprKind::Field { base, name } => {
+                if let ExprKind::Ident(recv) = &base.kind {
+                    if recv == "Tag" {
+                        return Some(name.to_lowercase());
+                    }
+                }
+                Some(name.clone())
+            }
+            _ => None,
+        }
+    }
+
+    fn lower_tag_mut(&self, base: &Expr, verb: &str, args: &[Expr]) -> Vec<String> {
+        let verb = if verb == "add" { "add" } else { "remove" };
+        let (sel, tag) = if matches!(&base.kind, ExprKind::Ident(n) if n == "Tag")
+            || self.tag_of(base).is_some()
+                && self.selector_of(base).is_none()
+                && !matches!(&base.kind, ExprKind::This)
+        {
+            let tag = self.tag_of(base).unwrap_or_default();
+            let sel = args
+                .first()
+                .and_then(|e| self.selector_of(e))
+                .map(|s| s.emit())
+                .unwrap_or_else(|| self.this_sel.clone());
+            (sel, tag)
+        } else {
+            let sel = self
+                .selector_of(base)
+                .map(|s| s.emit())
+                .unwrap_or_else(|| self.this_sel.clone());
+            let tag = args
+                .first()
+                .and_then(|e| self.tag_of(e))
+                .unwrap_or_default();
+            (sel, tag)
+        };
+        if tag.is_empty() {
+            return Vec::new();
+        }
+        vec![format!("tag {sel} {verb} {tag}")]
+    }
+
+    fn lower_while(&mut self, cond: &Expr, body: &[Stmt]) -> Vec<String> {
+        match &cond.kind {
+            ExprKind::Bool(false) => Vec::new(),
+            ExprKind::Bool(true) => {
+                self.errors.push(Diagnostic::new(
+                    cond.span.clone(),
+                    "`while (true)` has no compile-time bound; use `for` or a clock `if`",
+                ));
+                Vec::new()
+            }
+            _ => {
+                if let Some(n) = self.unroll_bound(cond) {
+                    let mut out = Vec::new();
+                    for _ in 0..n {
+                        out.extend(self.lower_block(body));
+                    }
+                    return out;
+                }
+                let inner = self.lower_block(body);
+                self.emit_if(cond, inner, Vec::new())
             }
         }
-        eval_int(expr, &self.enums)
+    }
+
+    fn lower_for(
+        &mut self,
+        init: Option<&Stmt>,
+        cond: Option<&Expr>,
+        step: Option<&Expr>,
+        body: &[Stmt],
+    ) -> Vec<String> {
+        if let Some(init) = init {
+            let _ = self.lower_block(std::slice::from_ref(init));
+        }
+        if let (Some(cond), Some(step)) = (cond, step) {
+            if let Some(times) = self.unroll_for_times(init, cond, step) {
+                let mut out = Vec::new();
+                for _ in 0..times {
+                    out.extend(self.lower_block(body));
+                    let _ = self.lower_expr_stmt(step);
+                    self.apply_const_step(step);
+                }
+                return out;
+            }
+        }
+        let mut out = Vec::new();
+        if let Some(cond) = cond {
+            let mut inner = self.lower_block(body);
+            if let Some(step) = step {
+                inner.extend(self.lower_expr_stmt(step));
+            }
+            out.extend(self.emit_if(cond, inner, Vec::new()));
+        } else {
+            out.extend(self.lower_block(body));
+        }
+        out
+    }
+
+    fn unroll_bound(&self, cond: &Expr) -> Option<u32> {
+        if let ExprKind::Binary {
+            op: BinOp::Lt | BinOp::Le,
+            lhs,
+            rhs,
+        } = &cond.kind
+        {
+            let n = self.int_of(rhs)?;
+            let start = self.int_of(lhs)?;
+            let max = if matches!(cond.kind, ExprKind::Binary { op: BinOp::Le, .. }) {
+                n - start + 1
+            } else {
+                n - start
+            };
+            if (1..65).contains(&max) {
+                return Some(max as u32);
+            }
+        }
+        None
+    }
+
+    fn unroll_for_times(&self, init: Option<&Stmt>, cond: &Expr, step: &Expr) -> Option<u32> {
+        let start = match init.map(|s| &s.kind) {
+            Some(StmtKind::Local { init: Some(e), .. }) => self.int_of(e)?,
+            _ => 0,
+        };
+        let ExprKind::Binary {
+            op: BinOp::Lt | BinOp::Le,
+            rhs,
+            ..
+        } = &cond.kind
+        else {
+            return None;
+        };
+        let end = self.int_of(rhs)?;
+        let delta = match &step.kind {
+            ExprKind::Update { delta, .. } => *delta,
+            _ => 1,
+        };
+        if delta <= 0 {
+            return None;
+        }
+        let span = match cond.kind {
+            ExprKind::Binary { op: BinOp::Le, .. } => end - start + 1,
+            _ => end - start,
+        };
+        let times = span / delta;
+        if (1..65).contains(&times) {
+            Some(times as u32)
+        } else {
+            None
+        }
+    }
+
+    fn apply_const_step(&mut self, step: &Expr) {
+        if let ExprKind::Update { expr, delta, .. } = &step.kind {
+            if let ExprKind::Ident(n) = &expr.kind {
+                if let Some(ConstVal::Int(v)) = self.consts.get_mut(n) {
+                    *v += *delta;
+                }
+            }
+        }
     }
 
     fn list_elems(&self, expr: &Expr) -> Option<Vec<Expr>> {
@@ -1246,7 +1501,21 @@ impl<'a> Lower<'a> {
             }
             ExprKind::Call { callee, .. } => {
                 if let ExprKind::Field { base, name } = &callee.kind {
-                    if matches!(name.as_str(), "count" | "data" | "component") {
+                    if matches!(
+                        name.as_str(),
+                        "count"
+                            | "data"
+                            | "component"
+                            | "named"
+                            | "name"
+                            | "lore"
+                            | "enchant"
+                            | "trait"
+                            | "glow"
+                            | "lock"
+                            | "tag"
+                            | "withTag"
+                    ) {
                         return self.is_item_expr(base);
                     }
                 }
@@ -1293,6 +1562,45 @@ impl<'a> Lower<'a> {
                             let k = args.first().and_then(string_lit).unwrap_or_default();
                             let v = args.get(1).and_then(string_lit).unwrap_or_default();
                             item.components.push((k, v));
+                        }
+                        "named" | "name" => {
+                            if let Some(s) = args.first().and_then(string_lit) {
+                                item.custom_name = Some(s);
+                            }
+                        }
+                        "lore" => {
+                            if let Some(s) = args.first().and_then(string_lit) {
+                                item.lore.push(s);
+                            }
+                        }
+                        "enchant" => {
+                            let id = enum_or_name(args.first()).to_lowercase();
+                            let lv = args.get(1).and_then(|e| self.int_of(e)).unwrap_or(1);
+                            item.enchants.push((id, lv));
+                        }
+                        "trait" => {
+                            if let Some(s) = args.first().and_then(string_lit) {
+                                let sl = s.to_lowercase();
+                                if sl == "lock" {
+                                    item.lock = true;
+                                }
+                                if sl == "glow" {
+                                    item.glow = true;
+                                }
+                                item.traits.push(s);
+                            }
+                        }
+                        "glow" => item.glow = true,
+                        "lock" => {
+                            item.lock = true;
+                            if !item.traits.iter().any(|t| t == "lock") {
+                                item.traits.push("lock".into());
+                            }
+                        }
+                        "tag" | "withTag" => {
+                            if let Some(t) = args.first().and_then(|e| self.tag_of(e)) {
+                                item.tags.push(t);
+                            }
                         }
                         _ => {}
                     }
@@ -1354,6 +1662,9 @@ impl<'a> Lower<'a> {
                             let xs: Option<Vec<ConstVal>> =
                                 args.iter().map(|a| self.const_of(a)).collect();
                             return xs.map(ConstVal::List);
+                        }
+                        if recv == "Tag" {
+                            return args.first().and_then(string_lit).map(ConstVal::Tag);
                         }
                     }
                 }
@@ -1455,17 +1766,15 @@ impl<'a> Lower<'a> {
     fn apply_sel(&self, sel: &mut Selector, name: &str, args: &[Expr]) -> Option<()> {
         match name {
             "withTag" => {
-                sel.args.push(("tag".into(), string_lit(&args[0])?));
+                let t = args.first().and_then(|e| self.tag_of(e))?;
+                sel.args.push(("tag".into(), t));
             }
             "withoutTag" => {
-                sel.args
-                    .push(("tag".into(), format!("!{}", string_lit(&args[0])?)));
+                let t = args.first().and_then(|e| self.tag_of(e))?;
+                sel.args.push(("tag".into(), format!("!{t}")));
             }
             "inBox" => {
-                let nums: Vec<i64> = args
-                    .iter()
-                    .filter_map(|e| self.int_of(e))
-                    .collect();
+                let nums: Vec<i64> = args.iter().filter_map(|e| self.int_of(e)).collect();
                 if nums.len() == 6 {
                     sel.args.push(("x".into(), nums[0].to_string()));
                     sel.args.push(("y".into(), nums[1].to_string()));
@@ -1492,20 +1801,21 @@ impl<'a> Lower<'a> {
                 sel.args.push(("dz".into(), region.5.to_string()));
             }
             "hasItem" => {
-                let item = item_id(args.first());
+                let item = args.first().map(|e| self.item_of(e))?;
+                let id = item.id.clone();
                 let n = args
                     .get(1)
                     .and_then(|e| self.int_of(e))
-                    .unwrap_or(1);
+                    .unwrap_or(item.count.max(1));
                 match self.config.edition {
                     Edition::Bedrock => sel
                         .args
-                        .push(("hasitem".into(), format!("{{item={item},quantity={n}..}}"))),
+                        .push(("hasitem".into(), format!("{{item={id},quantity={n}..}}"))),
                     Edition::Java => {
-                        let item = if item.contains(':') {
-                            item
+                        let item = if id.contains(':') {
+                            id
                         } else {
-                            format!("minecraft:{item}")
+                            format!("minecraft:{id}")
                         };
                         sel.java_items.push((item, n));
                     }
@@ -1618,6 +1928,11 @@ impl<'a> Lower<'a> {
     }
 
     fn emit_if(&self, cond: &Expr, then_cmds: Vec<String>, else_cmds: Vec<String>) -> Vec<String> {
+        match &cond.kind {
+            ExprKind::Bool(true) => return then_cmds,
+            ExprKind::Bool(false) => return else_cmds,
+            _ => {}
+        }
         let mut out = Vec::new();
         let or_parts = flatten_or(cond);
         for part in &or_parts {
@@ -1739,6 +2054,16 @@ impl<'a> Lower<'a> {
                                 clauses.extend(self.java_item_clauses(&sel));
                             }
                             return clauses;
+                        }
+                    }
+                    if name == "has" || name == "hasTag" {
+                        if let Some(tag) = args.first().and_then(|e| self.tag_of(e)) {
+                            let sel = self
+                                .selector_of(base)
+                                .map(|s| s.emit())
+                                .unwrap_or_else(|| self.this_sel.clone());
+                            let word = if invert { "unless" } else { "if" };
+                            return vec![format!("{word} entity {sel}[tag={tag}]")];
                         }
                     }
                     if name == "in" {
@@ -1872,7 +2197,22 @@ fn stmt_uses_name(stmt: &Stmt, name: &str) -> bool {
         StmtKind::Assign { target, value, .. } => {
             expr_uses_name(target, name) || expr_uses_name(value, name)
         }
-        StmtKind::Run { command } => command.split(|c: char| !c.is_ascii_alphanumeric())
+        StmtKind::While { cond, body } => {
+            expr_uses_name(cond, name) || body.iter().any(|s| stmt_uses_name(s, name))
+        }
+        StmtKind::For {
+            init,
+            cond,
+            step,
+            body,
+        } => {
+            init.as_ref().is_some_and(|s| stmt_uses_name(s, name))
+                || cond.as_ref().is_some_and(|e| expr_uses_name(e, name))
+                || step.as_ref().is_some_and(|e| expr_uses_name(e, name))
+                || body.iter().any(|s| stmt_uses_name(s, name))
+        }
+        StmtKind::Run { command } => command
+            .split(|c: char| !c.is_ascii_alphanumeric())
             .any(|w| w == name),
         StmtKind::Return(None) | StmtKind::Label(_) => false,
     }
@@ -1888,6 +2228,16 @@ fn expr_uses_name(expr: &Expr, name: &str) -> bool {
         }
         ExprKind::Field { base, .. } => expr_uses_name(base, name),
         ExprKind::New { args, .. } => args.iter().any(|a| expr_uses_name(a, name)),
+        ExprKind::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_uses_name(cond, name)
+                || expr_uses_name(then_expr, name)
+                || expr_uses_name(else_expr, name)
+        }
+        ExprKind::Update { expr, .. } => expr_uses_name(expr, name),
         _ => false,
     }
 }
@@ -2109,6 +2459,9 @@ fn eval_const(expr: &Expr) -> Option<ConstVal> {
                             dy: expr_int(&args[4])?,
                             dz: expr_int(&args[5])?,
                         });
+                    }
+                    if recv == "Tag" && name == "of" {
+                        return args.first().and_then(string_lit).map(ConstVal::Tag);
                     }
                 }
             }

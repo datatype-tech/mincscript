@@ -1,6 +1,6 @@
 # MINCB binary and compilation
 
-`minc build` writes **`dist/<project>.mincb`**: one edition-neutral placement file. It is **not** a `.jar` and not a Minecraft world. A later placer (same CLI or a companion) turns it into:
+`minc build` writes **`dist/<project>.mincb`** and **`dist/<project>.mar`**. MINCB is **not** a Minecraft world. `.mar` is the JAR-like distribution: a STORE ZIP holding the compiled binary plus targeting metadata. A later placer (same CLI or a companion) turns MINCB into:
 
 - Java: datapack + optional structure NBT
 - Bedrock: behavior pack functions + `.mcstructure` / world chunk edits
@@ -171,6 +171,17 @@ minc dump --commands
 ```
 
 Prints the exact strings that will sit in CBs / functions, for diffing against `docs/minecraft-commands`.
+
+## `.mar` archive (like a JAR)
+
+`.mar` is a ZIP with **STORE** (no deflate), same local/central/EOCD records as a JAR:
+
+| Entry | Role |
+| --- | --- |
+| `META-INF/MANIFEST.MF` | `Edition`, `Game-Version`, `Pack`, `Name`, `Score-Revision`, `Origin`, `Minc-Format` |
+| `pack.mincb` | the compiled MINCB blob |
+
+`minc inspect file.mar` prints the manifest, then the MINCB inspect dump. The compiler does **not** emit one command per source statement: peephole passes drop `execute run`, `execute as @s`, duplicate lines, and `add 0` after a `set`, and fold `set N` + `add M` into `set N+M`.
 
 ## Size and limits
 

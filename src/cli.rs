@@ -48,10 +48,10 @@ minc — MincScript compiler
   minc new <dir> --edition bedrock|java --version <ver>
   minc check [dir]
   minc build [--out dist/] [--emit functions-only]
-  minc inspect <file.mincb> [--chain Name] [--strict]
-  minc dump <file.mincb|--project> --commands
+  minc inspect <file.mincb|.mar> [--chain Name] [--strict]
+  minc dump <file.mincb|.mar|--project> --commands
   minc layout <chain> --layout stack --origin x y z --facing up [--relative]
-  minc place <file.mincb> [--out dist/place]
+  minc place <file.mincb|.mar> [--out dist/place]
 "
     );
 }
@@ -239,7 +239,7 @@ fn cmd_inspect(it: &mut impl Iterator<Item = String>) -> i32 {
         i += 1;
     }
     let Some(path) = path else {
-        eprintln!("minc inspect <file.mincb> [--chain Name] [--strict]");
+        eprintln!("minc inspect <file.mincb|.mar> [--chain Name] [--strict]");
         return 2;
     };
     let bytes = match fs::read(&path) {
@@ -249,6 +249,20 @@ fn cmd_inspect(it: &mut impl Iterator<Item = String>) -> i32 {
             return 2;
         }
     };
+    let (bytes, manifest) = match crate::mar::unwrap_payload(&bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            return 1;
+        }
+    };
+    if let Some(text) = &manifest {
+        print!("{text}");
+        if !text.ends_with('\n') {
+            println!();
+        }
+        println!("---");
+    }
     if let Some(h) = decode_header(&bytes) {
         let toml_path = PathBuf::from("minc.toml");
         if toml_path.is_file() {
@@ -297,12 +311,20 @@ fn cmd_dump(it: &mut impl Iterator<Item = String>) -> i32 {
         return 2;
     }
     if let Some(p) = path {
-        if p.extension().and_then(|s| s.to_str()) == Some("mincb") {
+        let ext = p.extension().and_then(|s| s.to_str());
+        if ext == Some("mincb") || ext == Some("mar") {
             let bytes = match fs::read(&p) {
                 Ok(b) => b,
                 Err(e) => {
                     eprintln!("{e}");
                     return 2;
+                }
+            };
+            let bytes = match crate::mar::unwrap_payload(&bytes) {
+                Ok((b, _)) => b,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return 1;
                 }
             };
             let Some(image) = mincb::decode_image(&bytes) else {
@@ -432,7 +454,13 @@ fn cmd_place(it: &mut impl Iterator<Item = String>) -> i32 {
     }
     let bytes = if let Some(p) = path {
         match fs::read(&p) {
-            Ok(b) => b,
+            Ok(b) => match crate::mar::unwrap_payload(&b) {
+                Ok((mincb, _)) => mincb,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return 1;
+                }
+            },
             Err(e) => {
                 eprintln!("{e}");
                 return 2;

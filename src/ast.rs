@@ -272,6 +272,16 @@ pub enum StmtKind {
     Run {
         command: String,
     },
+    While {
+        cond: Expr,
+        body: Vec<Stmt>,
+    },
+    For {
+        init: Option<Box<Stmt>>,
+        cond: Option<Expr>,
+        step: Option<Expr>,
+        body: Vec<Stmt>,
+    },
     If {
         cond: Expr,
         then_body: Vec<Stmt>,
@@ -362,6 +372,17 @@ pub enum ExprKind {
         args: Vec<Expr>,
     },
     Null,
+    Ternary {
+        cond: Box<Expr>,
+        then_expr: Box<Expr>,
+        else_expr: Box<Expr>,
+    },
+    /// `++x` / `x++` / `--x` / `x--`
+    Update {
+        expr: Box<Expr>,
+        delta: i64,
+        prefix: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

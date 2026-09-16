@@ -192,6 +192,21 @@ pub fn check_with_config(unit: &CompilationUnit, config: Option<&MincConfig>) ->
                     false,
                 );
             }
+            Item::Place(place) => {
+                for stmt in &place.stmts {
+                    if let crate::ast::PlaceStmt::Container { slots, .. } = stmt {
+                        for slot in slots {
+                            let id = slot.item.dotted();
+                            if !id.is_empty() && !crate::items::is_real_item(&id) {
+                                errors.push(Diagnostic::new(
+                                    unit.pack_span.clone(),
+                                    format!("chest item `{id}` is not a real vanilla item"),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -335,6 +350,101 @@ fn check_stmts(
                         bedrock_only,
                     );
                 }
+            }
+            StmtKind::While { cond, body } => {
+                check_expr(
+                    current_class,
+                    cond,
+                    fields,
+                    methods,
+                    classes,
+                    enums,
+                    locals,
+                    errors,
+                    config,
+                    java_only,
+                    bedrock_only,
+                );
+                check_stmts(
+                    current_class,
+                    body,
+                    fields,
+                    methods,
+                    classes,
+                    enums,
+                    locals,
+                    errors,
+                    config,
+                    java_only,
+                    bedrock_only,
+                );
+            }
+            StmtKind::For {
+                init,
+                cond,
+                step,
+                body,
+            } => {
+                let mark = locals.len();
+                if let Some(init) = init {
+                    check_stmts(
+                        current_class,
+                        std::slice::from_ref(init.as_ref()),
+                        fields,
+                        methods,
+                        classes,
+                        enums,
+                        locals,
+                        errors,
+                        config,
+                        java_only,
+                        bedrock_only,
+                    );
+                }
+                if let Some(cond) = cond {
+                    check_expr(
+                        current_class,
+                        cond,
+                        fields,
+                        methods,
+                        classes,
+                        enums,
+                        locals,
+                        errors,
+                        config,
+                        java_only,
+                        bedrock_only,
+                    );
+                }
+                if let Some(step) = step {
+                    check_expr(
+                        current_class,
+                        step,
+                        fields,
+                        methods,
+                        classes,
+                        enums,
+                        locals,
+                        errors,
+                        config,
+                        java_only,
+                        bedrock_only,
+                    );
+                }
+                check_stmts(
+                    current_class,
+                    body,
+                    fields,
+                    methods,
+                    classes,
+                    enums,
+                    locals,
+                    errors,
+                    config,
+                    java_only,
+                    bedrock_only,
+                );
+                locals.truncate(mark);
             }
             StmtKind::Context { prefixes, body } => {
                 for prefix in prefixes {
@@ -520,7 +630,7 @@ fn check_expr(
     bedrock_only: bool,
 ) {
     match &expr.kind {
-        ExprKind::Unary { expr, .. } => check_expr(
+        ExprKind::Unary { expr, .. } | ExprKind::Update { expr, .. } => check_expr(
             current_class,
             expr,
             fields,
@@ -533,6 +643,51 @@ fn check_expr(
             java_only,
             bedrock_only,
         ),
+        ExprKind::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            check_expr(
+                current_class,
+                cond,
+                fields,
+                methods,
+                classes,
+                enums,
+                locals,
+                errors,
+                config,
+                java_only,
+                bedrock_only,
+            );
+            check_expr(
+                current_class,
+                then_expr,
+                fields,
+                methods,
+                classes,
+                enums,
+                locals,
+                errors,
+                config,
+                java_only,
+                bedrock_only,
+            );
+            check_expr(
+                current_class,
+                else_expr,
+                fields,
+                methods,
+                classes,
+                enums,
+                locals,
+                errors,
+                config,
+                java_only,
+                bedrock_only,
+            );
+        }
         ExprKind::Binary { op, lhs, rhs, .. } => {
             check_expr(
                 current_class,
@@ -759,6 +914,16 @@ fn check_expr(
                 java_only,
                 bedrock_only,
             );
+            if let ExprKind::Ident(recv) = &base.kind {
+                if recv == "Items" && !crate::items::is_real_item(name) {
+                    errors.push(Diagnostic::new(
+                        expr.span.clone(),
+                        format!(
+                            "`Items.{name}` is not a real vanilla item; traits patch a real stack"
+                        ),
+                    ));
+                }
+            }
             if let Some(owner) =
                 type_of(current_class, base, fields, methods, classes, enums, locals)
             {
@@ -802,7 +967,7 @@ fn check_expr(
                 ));
             } else if !matches!(
                 name.as_str(),
-                "Region" | "BlockPos" | "Item" | "Block" | "Layout" | "ItemStack"
+                "Region" | "BlockPos" | "Item" | "Block" | "Layout" | "ItemStack" | "Tag"
             ) && !name.is_empty()
             {
                 errors.push(Diagnostic::new(
@@ -845,10 +1010,47 @@ fn type_of(
             if enums.iter().any(|e| e == name) {
                 return Some(name.clone());
             }
+            match name.as_str() {
+                "Items" | "Tag" | "Players" | "Player" | "List" | "World" => {
+                    return Some(name.clone())
+                }
+                _ => {}
+            }
             None
         }
+        ExprKind::Ternary {
+            then_expr,
+            else_expr,
+            ..
+        } => type_of(
+            current_class,
+            then_expr,
+            fields,
+            methods,
+            classes,
+            enums,
+            locals,
+        )
+        .or_else(|| {
+            type_of(
+                current_class,
+                else_expr,
+                fields,
+                methods,
+                classes,
+                enums,
+                locals,
+            )
+        }),
+        ExprKind::Update { .. } => Some("int".into()),
         ExprKind::Field { base, name } => {
             if let ExprKind::Ident(class) = &base.kind {
+                if class == "Items" {
+                    return Some("Item".into());
+                }
+                if class == "Tag" {
+                    return Some("Tag".into());
+                }
                 if classes.iter().any(|c| c == class) || fields.iter().any(|f| f.class == *class) {
                     if let Some(f) = fields.iter().find(|f| f.class == *class && f.name == *name) {
                         return named_type(&f.ty);
@@ -873,6 +1075,9 @@ fn type_of(
             if let ExprKind::Field { base, name } = &callee.kind {
                 if name == "of" {
                     if let ExprKind::Ident(class) = &base.kind {
+                        if class == "Tag" {
+                            return Some("Tag".into());
+                        }
                         if classes.iter().any(|c| c == class) {
                             return Some(class.clone());
                         }
@@ -893,6 +1098,8 @@ fn type_of(
                                     | "World"
                                     | "Text"
                                     | "List"
+                                    | "Tag"
+                                    | "Item"
                             ) =>
                     {
                         Some(class.clone())
@@ -909,10 +1116,11 @@ fn type_of(
             if let ExprKind::Ident(name) = &callee.kind {
                 return match name.as_str() {
                     "block" => Some("Block".into()),
-                    "title" | "tellraw" | "give" | "kill" | "effect" | "clear"
-                    | "playsound" | "particle" | "summon" | "setblock" | "say" | "weather"
-                    | "time" | "xp" | "difficulty" | "enchant" | "replaceItem"
-                    | "replaceitem" | "cmd" | "run" => Some("void".into()),
+                    "title" | "tellraw" | "give" | "kill" | "effect" | "clear" | "playsound"
+                    | "particle" | "summon" | "setblock" | "say" | "weather" | "time" | "xp"
+                    | "difficulty" | "enchant" | "replaceItem" | "replaceitem" | "cmd" | "run" => {
+                        Some("void".into())
+                    }
                     "random" => Some("int".into()),
                     _ => None,
                 };
@@ -928,7 +1136,7 @@ fn builtin_return(owner: &str, name: &str) -> Option<String> {
     Some(
         match (owner, name) {
             ("Player", "self") | ("Player", "nearest") => "Player",
-            ("Players", "all") => "Player",
+            ("Players", "all") | ("Players", "raw") => "Player",
             ("Players", "entities") => "Entity",
             ("BlockPos", "of")
             | ("BlockPos", "here")
@@ -937,7 +1145,19 @@ fn builtin_return(owner: &str, name: &str) -> Option<String> {
             ("Region", "box") | ("Region", "circle") => "Region",
             ("Items", _) | ("Blocks", _) => owner,
             ("List", "of") => "List",
-            ("Item", "count") | ("Item", "data") | ("Item", "component") => "Item",
+            ("Tag", "of") => "Tag",
+            ("Item", "count")
+            | ("Item", "data")
+            | ("Item", "component")
+            | ("Item", "named")
+            | ("Item", "name")
+            | ("Item", "lore")
+            | ("Item", "enchant")
+            | ("Item", "trait")
+            | ("Item", "glow")
+            | ("Item", "lock")
+            | ("Item", "tag")
+            | ("Item", "withTag") => "Item",
             _ => return None,
         }
         .to_string(),

@@ -60,17 +60,19 @@ minc new <dir> --edition bedrock --version 1.21.70
 minc new <dir> --edition java --version 1.21.11
 
 minc check                 # 类型检查 + 版本/版本特性检查，不写文件
-minc build                 # 写出 dist/<name>.mincb 以及可选函数包
+minc build                 # 写出 dist/<name>.mincb 和 dist/<name>.mar，以及可选函数包
 minc build --out dist/
 minc build --emit functions-only   # 调试：只看命令，不排命令方块
 
 minc inspect dist/metro-escape.mincb
+minc inspect dist/metro-escape.mar
 minc inspect --chain Play
 
 minc layout Play --layout stack --origin 2 70 0 --facing up
 minc layout Lobby --layout linear --origin 0 70 0 --facing east
 
 minc dump dist/metro-escape.mincb --commands
+minc dump dist/metro-escape.mar --commands
 ```
 
 `minc new` writes:
@@ -95,7 +97,9 @@ minc dump dist/metro-escape.mincb --commands
 - CLI `--origin x y z` is **world absolute** unless `--relative` is passed.
 - In `controller.mcs`, `at (2, 6, 0)` is **relative to `world.origin`** by default.
 - `at absolute (100, 64, -30)` is world space.
-- `minc layout` updates those numbers; `minc build` is the only command that writes MINCB.
+- `minc layout` updates those numbers; `minc build` is the only command that writes MINCB / `.mar`.
+
+`.mar` is a JAR-shaped ZIP (STORE only): `META-INF/MANIFEST.MF` (edition, game version, pack) plus `pack.mincb`. `minc inspect` / `dump` / `place` accept either `.mincb` or `.mar`.
 
 ## Exit codes
 

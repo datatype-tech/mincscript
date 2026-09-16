@@ -1,8 +1,10 @@
 # Syntax
 
-MincScript looks like a small Java 11: braces, `class`, `public`/`private`, `if`/`else`, `foreach`, annotations. It is **not** a JVM language. There is no `new` for entities, no `null`, no runtime generics (except the built-in `Seq<T>` selector type and compile-time `List<T>`), no exceptions.
+MincScript looks like a small Java 11: braces, `class`, `public`/`private`, `if`/`else`, `for`/`while`, `foreach`, `++`/`--`, `?:`, annotations. You write **statements**, not Minecraft commands. It is **not** a JVM language. There is no `new` for entities, no `null`, no runtime generics (except the built-in `Seq<T>` selector type and compile-time `List<T>`), no exceptions.
 
 File encoding: UTF-8. Comments: `//` and `/* */`. Identifiers: Unicode letters, `$` not used.
+
+The compiler does **not** 1:1-print your source. It lowers to an equivalent command list (constant `if`/`?:` fold, `for` unroll when the bound is known, identity `execute` stripped, dead `add 0` dropped). Same in-game effect, fewer lines.
 
 ## Compilation units
 
@@ -33,7 +35,8 @@ import metro.escape.Runner;
 | `Entity` | any entity handle |
 | `BlockPos` | compile-time or runtime `~ ~ ~` / absolute |
 | `Block` | block id + optional states |
-| `Item` | item id + optional count / data / components |
+| `Item` | **real vanilla id** + compile-time traits (`named`, `lore`, `enchant`, `lock`, `glow`, `tag`) |
+| `Tag` | compile-time tag object (`Tag.of("metro_key")`); assign to players/entities/items |
 | `Region` | two `BlockPos` or AABB / circle |
 | `Seq<T>` | selector, not a list |
 | `List<T>` | **compile-time** list (`List.of`); `foreach` unrolls. Not a heap array |
@@ -70,7 +73,20 @@ if (Match.phase == Phase.PLAY) {
 }
 ```
 
-Lowers to mutually exclusive `execute if score … matches N run function …`.
+Lowers to mutually exclusive `execute if score … matches N run function …`. Constant `if (true)` / `if (false)` emit only the live branch.
+
+```java
+for (int i = 0; i < 3; i++) {
+    say("hi");
+}
+while (Match.phase < 2) {
+    Match.phase++;
+}
+Match.a = ready ? 1 : 0;
+this.keys++;
+```
+
+`for` / `while` with a compile-time bound **unroll** (cap 64). An unbounded `while (true)` is an error — use a clock `if` on a Repeat chain. `++` / `--` are `scoreboard players add`/`remove`. `?:` is an `if` (folded when the condition is constant).
 
 ```java
 if (block(BlockPos.at(0, 63, 0)) == Blocks.GOLD_BLOCK) {
@@ -126,7 +142,14 @@ BlockPos feet = BlockPos.here().up(-1); // ~ ~-1 ~
 
 Items.GOLD_INGOT.count(1);
 Items.GOLD_INGOT.data(0);                 // Bedrock aux; error on Java
+Items.DIAMOND_SWORD.named("钥匙").lore("地铁").enchant("sharpness", 5).lock().glow();
+Items.GOLD_INGOT.tag(Tag.of("metro_key"));  // Tag object on a real stack
 Items.DIAMOND_SWORD.component("item_lock", "{mode:lock_in_inventory}"); // edition-checked
+
+Tag key = Tag.of("metro_key");
+Players.all().withTag(key);
+p.add(key);
+if (p.has(key)) { /* execute if entity @s[tag=metro_key] */ }
 
 cmd("title @a title 地铁逃生");           // 整行原样，仍禁止前导以外的语法裂口
 run "say hello";                       // 一条语句 = 一条指令

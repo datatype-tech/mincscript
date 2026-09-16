@@ -240,6 +240,22 @@ switch (Match.phase) {
 
 `a + b` 这种运行时整数运算会走 `scoreboard players operation` 和一次性 `#tN mt`，不是 `temp` 关键字，但也 **不会** 给你的变量建目标。
 
+## 8.5 真物品、特质、`Tag` 对象、Java 控制流
+
+新建物品必须是游戏里存在的 id（`Items.GOLD_INGOT`），再用特质补丁，而不是堆上的假对象：
+
+```java
+Tag key = Tag.of("metro_key");
+Item sword = Items.DIAMOND_SWORD.named("钥匙").lore("地铁").lock().tag(key);
+give(Players.all(), sword);
+p.add(key);                 // tag @s add metro_key
+if (p.has(key)) { say("ok"); }
+```
+
+`for` / `while` / `++` / `?:` 按 **等价效果** 降成指令：常量 `if` 只留活分支，`for (int i = 0; i < 3; i++)` 展开成三份，不会 1:1 保留循环。
+
+`minc build` 还会写 **`.mar`**：一个和 JAR 一样的 ZIP（STORE），里面是 `META-INF/MANIFEST.MF`（面向哪个 edition / 版本）和已编译的 `pack.mincb`。
+
 ## 9. 文件角色
 
 | 文件 | 角色 |

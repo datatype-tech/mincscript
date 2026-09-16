@@ -8,12 +8,20 @@
 use crate::config::Edition;
 
 /// Compile-time item stack (id + count + edition extras). Not a scoreboard.
+/// Always backed by a **real vanilla item**; traits are patches on that stack.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ItemStack {
     pub id: String,
     pub count: i64,
     pub data: Option<i64>,
     pub components: Vec<(String, String)>,
+    pub custom_name: Option<String>,
+    pub lore: Vec<String>,
+    pub enchants: Vec<(String, i64)>,
+    pub traits: Vec<String>,
+    pub tags: Vec<String>,
+    pub glow: bool,
+    pub lock: bool,
 }
 
 impl ItemStack {
@@ -21,8 +29,7 @@ impl ItemStack {
         Self {
             id: normalize_item_id(&id.into()),
             count: 1,
-            data: None,
-            components: Vec::new(),
+            ..Self::default()
         }
     }
 
@@ -39,30 +46,104 @@ impl ItemStack {
     /// Java `/give` item argument, including `[components]` when present.
     pub fn java_stack(&self) -> String {
         let id = namespaced_id(&self.id, Edition::Java);
-        if self.components.is_empty() {
-            id
-        } else {
-            let patch = self
-                .components
+        let mut patch = Vec::new();
+        if let Some(name) = &self.custom_name {
+            patch.push(format!(
+                "custom_name={{\"text\":\"{}\"}}",
+                escape_json(name)
+            ));
+        }
+        if !self.lore.is_empty() {
+            let parts: Vec<String> = self
+                .lore
                 .iter()
-                .map(|(k, v)| {
-                    if v.is_empty() {
+                .map(|l| format!("{{\"text\":\"{}\"}}", escape_json(l)))
+                .collect();
+            patch.push(format!("lore=[{}]", parts.join(",")));
+        }
+        if !self.enchants.is_empty() {
+            let parts: Vec<String> = self
+                .enchants
+                .iter()
+                .map(|(k, lv)| {
+                    let id = if k.contains(':') {
                         k.clone()
                     } else {
-                        format!("{k}={v}")
-                    }
+                        format!("minecraft:{}", k.to_lowercase())
+                    };
+                    format!("\"{id}\":{lv}")
                 })
+                .collect();
+            patch.push(format!("enchantments={{levels:{{{}}}}}", parts.join(",")));
+        }
+        if self.glow {
+            patch.push("enchantment_glint_override=true".into());
+        }
+        if self.lock || !self.traits.is_empty() || !self.tags.is_empty() {
+            let t = self
+                .traits
+                .iter()
+                .map(|s| format!("\"{}\"", escape_json(s)))
                 .collect::<Vec<_>>()
                 .join(",");
-            format!("{id}[{patch}]")
+            let g = self
+                .tags
+                .iter()
+                .map(|s| format!("\"{}\"", escape_json(s)))
+                .collect::<Vec<_>>()
+                .join(",");
+            let lock = if self.lock { ",lock:1b" } else { "" };
+            patch.push(format!(
+                "custom_data={{minc:{{traits:[{t}],tags:[{g}]{lock}}}}}"
+            ));
+        }
+        for (k, v) in &self.components {
+            if v.is_empty() {
+                patch.push(k.clone());
+            } else {
+                patch.push(format!("{k}={v}"));
+            }
+        }
+        if patch.is_empty() {
+            id
+        } else {
+            format!("{id}[{}]", patch.join(","))
         }
     }
 
     fn bedrock_components_json(&self) -> Option<String> {
-        if self.components.is_empty() {
-            return None;
-        }
         let mut parts = Vec::new();
+        if let Some(name) = &self.custom_name {
+            parts.push(format!(
+                "\"minecraft:item_name\":{{\"value\":\"{}\"}}",
+                escape_json(name)
+            ));
+        }
+        if self.lock || self.traits.iter().any(|t| t == "lock") {
+            parts.push("\"minecraft:item_lock\":{\"mode\":\"lock_in_inventory\"}".into());
+        }
+        if self
+            .traits
+            .iter()
+            .any(|t| t == "keep" || t == "keep_on_death")
+        {
+            parts.push("\"minecraft:keep_on_death\":{}".into());
+        }
+        if !self.lore.is_empty() || !self.traits.is_empty() || !self.tags.is_empty() {
+            let mut lines = self.lore.clone();
+            for t in &self.traits {
+                lines.push(format!("trait:{t}"));
+            }
+            for t in &self.tags {
+                lines.push(format!("tag:{t}"));
+            }
+            let lore = lines
+                .iter()
+                .map(|l| format!("\"{}\"", escape_json(l)))
+                .collect::<Vec<_>>()
+                .join(",");
+            parts.push(format!("\"minecraft:lore\":[{lore}]"));
+        }
         for (k, v) in &self.components {
             let key = if k.contains(':') {
                 k.clone()
@@ -76,7 +157,11 @@ impl ItemStack {
                 parts.push(format!("\"{key}\":\"{}\"", escape_json(val)));
             }
         }
-        Some(format!("{{{}}}", parts.join(",")))
+        if parts.is_empty() {
+            None
+        } else {
+            Some(format!("{{{}}}", parts.join(",")))
+        }
     }
 }
 
@@ -115,10 +200,7 @@ pub fn escape_json(s: &str) -> String {
 }
 
 fn java_slot(slot: &str) -> String {
-    slot.trim()
-        .trim_start_matches("slot.")
-        .trim()
-        .to_string()
+    slot.trim().trim_start_matches("slot.").trim().to_string()
 }
 
 fn bedrock_slot(slot: &str) -> String {
@@ -158,14 +240,9 @@ pub fn give(edition: Edition, selector: &str, item: &ItemStack) -> Result<String
         }
         Edition::Java => {
             if item.data.is_some() {
-                return Err(
-                    "`Item.data(...)` is Bedrock aux-value syntax; invalid on Java".into(),
-                );
+                return Err("`Item.data(...)` is Bedrock aux-value syntax; invalid on Java".into());
             }
-            Ok(format!(
-                "give {selector} {} {count}",
-                item.java_stack()
-            ))
+            Ok(format!("give {selector} {} {count}", item.java_stack()))
         }
     }
 }
@@ -213,8 +290,7 @@ pub fn effect_clear(
             if let Some(e) = effect {
                 if !e.is_empty() && e != "clear" {
                     return Err(
-                        "Bedrock `/effect` clears all effects with `effect <player> clear`"
-                            .into(),
+                        "Bedrock `/effect` clears all effects with `effect <player> clear`".into(),
                     );
                 }
             }
@@ -356,9 +432,7 @@ pub fn title(
     text: &str,
 ) -> Result<String, String> {
     let loc = match location.to_lowercase().as_str() {
-        "title" | "subtitle" | "actionbar" | "times" | "clear" | "reset" => {
-            location.to_lowercase()
-        }
+        "title" | "subtitle" | "actionbar" | "times" | "clear" | "reset" => location.to_lowercase(),
         _ => "title".into(),
     };
     match loc.as_str() {
@@ -416,12 +490,7 @@ pub fn teleport(selector: &str, pos: &str) -> String {
 }
 
 /// Experience: Java `xp add`; Bedrock `xp <amount> [player]` / `xp <amount>L`.
-pub fn xp(
-    edition: Edition,
-    selector: &str,
-    amount: i64,
-    levels: bool,
-) -> Result<String, String> {
+pub fn xp(edition: Edition, selector: &str, amount: i64, levels: bool) -> Result<String, String> {
     match edition {
         Edition::Java => {
             let unit = if levels { "levels" } else { "points" };
@@ -506,16 +575,16 @@ mod tests {
         let mut item = ItemStack::new("potion");
         item.data = Some(7);
         assert!(give(Edition::Java, "@p", &item).is_err());
-        assert!(give(Edition::Bedrock, "@p", &item)
-            .unwrap()
-            .ends_with(" 7"));
+        assert!(give(Edition::Bedrock, "@p", &item).unwrap().ends_with(" 7"));
     }
 
     #[test]
     fn give_java_components_use_brackets() {
         let mut item = ItemStack::new("diamond_sword");
-        item.components
-            .push(("enchantments".into(), "{levels:{\"minecraft:sharpness\":5}}".into()));
+        item.components.push((
+            "enchantments".into(),
+            "{levels:{\"minecraft:sharpness\":5}}".into(),
+        ));
         let cmd = give(Edition::Java, "@s", &item).unwrap();
         assert!(cmd.contains("diamond_sword[enchantments="), "{cmd}");
         assert!(!cmd.contains("hasitem="), "{cmd}");
@@ -555,6 +624,24 @@ mod tests {
             replace_item(Edition::Java, "@s", "slot.hotbar.0", &item).unwrap(),
             "item replace entity @s hotbar.0 with minecraft:iron_ingot 1"
         );
+    }
+
+    #[test]
+    fn traits_patch_real_vanilla_stack() {
+        let mut item = ItemStack::new("diamond_sword");
+        item.custom_name = Some("钥匙".into());
+        item.lock = true;
+        item.tags.push("metro_key".into());
+        let je = give(Edition::Java, "@s", &item).unwrap();
+        assert!(je.contains("minecraft:diamond_sword["), "{je}");
+        assert!(je.contains("custom_name="), "{je}");
+        assert!(je.contains("custom_data="), "{je}");
+        assert!(je.contains("metro_key"), "{je}");
+        let be = give(Edition::Bedrock, "@s", &item).unwrap();
+        assert!(be.contains("diamond_sword"), "{be}");
+        assert!(be.contains("item_lock"), "{be}");
+        assert!(be.contains("item_name"), "{be}");
+        assert!(!be.contains("minecraft:diamond_sword["), "{be}");
     }
 
     #[test]

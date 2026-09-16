@@ -34,6 +34,8 @@ pub struct Artifacts {
     pub pack_files: BTreeMap<PathBuf, String>,
     pub warnings: Vec<String>,
     pub image: mincb::MincbImage,
+    /// JAR-like ZIP: `META-INF/MANIFEST.MF` + `pack.mincb`.
+    pub mar: Vec<u8>,
 }
 
 pub fn merge_units(files: &[ParsedFile]) -> Result<CompilationUnit, Vec<Diagnostic>> {
@@ -381,6 +383,7 @@ pub fn compile_unit(
     }
 
     let mincb_bytes = mincb::encode_image(&image);
+    let mar = crate::mar::build(config, &mincb_bytes);
     let inspect = mincb::inspect_text(&mincb_bytes, Some(&info), &command_blocks);
     let pack_files = emit_pack_files(
         config,
@@ -401,6 +404,7 @@ pub fn compile_unit(
         pack_files,
         warnings,
         image,
+        mar,
     })
 }
 
@@ -566,6 +570,8 @@ pub fn write_artifacts(
     if config.emit_mincb {
         let path = out_dir.join(format!("{}.mincb", config.name));
         std::fs::write(&path, &art.mincb).map_err(|e| e.to_string())?;
+        let mar_path = out_dir.join(format!("{}.mar", config.name));
+        std::fs::write(&mar_path, &art.mar).map_err(|e| e.to_string())?;
     }
     if config.emit_functions {
         let fn_root = out_dir.join("functions");

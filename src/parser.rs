@@ -21,6 +21,8 @@ fn is_punct(tok: &Token) -> bool {
             | Token::StarEq
             | Token::SlashEq
             | Token::PercentEq
+            | Token::PlusPlus
+            | Token::MinusMinus
             | Token::FatArrow
             | Token::Arrow
             | Token::DotDot
@@ -36,7 +38,7 @@ fn is_punct(tok: &Token) -> bool {
             | Token::Dot
             | Token::Colon
             | Token::At
-            | Token::Tilde
+            | Token::Question
             | Token::LParen
             | Token::RParen
             | Token::LBrace
@@ -867,6 +869,8 @@ impl Parser {
                         Token::If
                             | Token::Else
                             | Token::Foreach
+                            | Token::For
+                            | Token::While
                             | Token::Switch
                             | Token::Case
                             | Token::Default
@@ -908,7 +912,8 @@ impl Parser {
         match self.peek_at(off) {
             Some(Token::IntKw | Token::BooleanKw) => Some(1),
             Some(Token::Ident(name))
-                if (name == "Seq" || name == "List") && self.peek_at(off + 1) == Some(&Token::Lt) =>
+                if (name == "Seq" || name == "List")
+                    && self.peek_at(off + 1) == Some(&Token::Lt) =>
             {
                 let mut i = 2;
                 if matches!(
@@ -1057,6 +1062,8 @@ impl Parser {
             Some(Token::Slash) => self.parse_run_stmt(start, true),
             Some(Token::If) => self.parse_if(),
             Some(Token::Foreach) => self.parse_foreach(),
+            Some(Token::For) => self.parse_for(),
+            Some(Token::While) => self.parse_while(),
             Some(Token::Switch) => self.parse_switch(),
             Some(Token::Try) => {
                 self.error("`try`/`catch` is not valid in MincScript");
@@ -1159,6 +1166,69 @@ impl Parser {
                 ty,
                 name,
                 iter,
+                body,
+            },
+        )
+    }
+
+    fn parse_while(&mut self) -> Stmt {
+        let start = self.peek_span().start;
+        self.expect(Token::While, "`while`");
+        self.expect(Token::LParen, "`(`");
+        let cond = self.parse_expr();
+        self.expect(Token::RParen, "`)`");
+        let body = self.parse_block();
+        self.stmt(start, StmtKind::While { cond, body })
+    }
+
+    fn parse_for(&mut self) -> Stmt {
+        let start = self.peek_span().start;
+        self.expect(Token::For, "`for`");
+        self.expect(Token::LParen, "`(`");
+        let init = if self.peek() == Some(&Token::Semicolon) {
+            self.pos += 1;
+            None
+        } else if self.looks_like_local() {
+            Some(Box::new(self.parse_local()))
+        } else {
+            let expr = self.parse_expr();
+            let stmt = if let Some(op) = self.assign_op() {
+                self.pos += 1;
+                let value = self.parse_expr();
+                self.expect(Token::Semicolon, "`;`");
+                self.stmt(
+                    expr.span.start,
+                    StmtKind::Assign {
+                        target: expr,
+                        op,
+                        value,
+                    },
+                )
+            } else {
+                self.expect(Token::Semicolon, "`;`");
+                self.stmt(expr.span.start, StmtKind::Expr(expr))
+            };
+            Some(Box::new(stmt))
+        };
+        let cond = if self.peek() == Some(&Token::Semicolon) {
+            None
+        } else {
+            Some(self.parse_expr())
+        };
+        self.expect(Token::Semicolon, "`;` in `for`");
+        let step = if self.peek() == Some(&Token::RParen) {
+            None
+        } else {
+            Some(self.parse_expr())
+        };
+        self.expect(Token::RParen, "`)`");
+        let body = self.parse_block();
+        self.stmt(
+            start,
+            StmtKind::For {
+                init,
+                cond,
+                step,
                 body,
             },
         )
@@ -1309,7 +1379,27 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Expr {
-        self.parse_in()
+        self.parse_ternary()
+    }
+
+    fn parse_ternary(&mut self) -> Expr {
+        let cond = self.parse_in();
+        if self.peek() == Some(&Token::Question) {
+            self.pos += 1;
+            let then_expr = self.parse_expr();
+            self.expect(Token::Colon, "`:` in ternary");
+            let else_expr = self.parse_ternary();
+            let start = cond.span.start;
+            return self.expr(
+                start,
+                ExprKind::Ternary {
+                    cond: Box::new(cond),
+                    then_expr: Box::new(then_expr),
+                    else_expr: Box::new(else_expr),
+                },
+            );
+        }
+        cond
     }
 
     fn parse_in(&mut self) -> Expr {
@@ -1416,6 +1506,24 @@ impl Parser {
                     },
                 )
             }
+            Some(Token::PlusPlus) | Some(Token::MinusMinus) => {
+                let start = self.peek_span().start;
+                let delta = if self.peek() == Some(&Token::PlusPlus) {
+                    1
+                } else {
+                    -1
+                };
+                self.pos += 1;
+                let expr = self.parse_unary();
+                self.expr(
+                    start,
+                    ExprKind::Update {
+                        expr: Box::new(expr),
+                        delta,
+                        prefix: true,
+                    },
+                )
+            }
             Some(Token::Bang) => {
                 let start = self.peek_span().start;
                 self.pos += 1;
@@ -1468,6 +1576,23 @@ impl Parser {
                         ExprKind::Call {
                             callee: Box::new(expr),
                             args,
+                        },
+                    );
+                }
+                Some(Token::PlusPlus) | Some(Token::MinusMinus) => {
+                    let delta = if self.peek() == Some(&Token::PlusPlus) {
+                        1
+                    } else {
+                        -1
+                    };
+                    self.pos += 1;
+                    let start = expr.span.start;
+                    expr = self.expr(
+                        start,
+                        ExprKind::Update {
+                            expr: Box::new(expr),
+                            delta,
+                            prefix: false,
                         },
                     );
                 }

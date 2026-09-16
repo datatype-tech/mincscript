@@ -34,6 +34,10 @@ pub enum Token {
     Else,
     #[token("foreach", priority = 2)]
     Foreach,
+    #[token("for", priority = 2)]
+    For,
+    #[token("while", priority = 2)]
+    While,
     #[token("switch", priority = 2)]
     Switch,
     #[token("case", priority = 2)]
@@ -151,6 +155,10 @@ pub enum Token {
     OrOr,
     #[token("+=")]
     PlusEq,
+    #[token("++")]
+    PlusPlus,
+    #[token("--")]
+    MinusMinus,
     #[token("-=")]
     MinusEq,
     #[token("*=")]
@@ -189,8 +197,8 @@ pub enum Token {
     Colon,
     #[token("@")]
     At,
-    #[token("~")]
-    Tilde,
+    #[token("?")]
+    Question,
     #[token("(")]
     LParen,
     #[token(")")]
@@ -261,6 +269,8 @@ impl fmt::Display for Token {
             Token::If => "if",
             Token::Else => "else",
             Token::Foreach => "foreach",
+            Token::For => "for",
+            Token::While => "while",
             Token::Switch => "switch",
             Token::Case => "case",
             Token::Default => "default",
@@ -319,6 +329,8 @@ impl fmt::Display for Token {
             Token::AndAnd => "&&",
             Token::OrOr => "||",
             Token::PlusEq => "+=",
+            Token::PlusPlus => "++",
+            Token::MinusMinus => "--",
             Token::MinusEq => "-=",
             Token::StarEq => "*=",
             Token::SlashEq => "/=",
@@ -338,7 +350,7 @@ impl fmt::Display for Token {
             Token::Dot => ".",
             Token::Colon => ":",
             Token::At => "@",
-            Token::Tilde => "~",
+            Token::Question => "?",
             Token::LParen => "(",
             Token::RParen => ")",
             Token::LBrace => "{",

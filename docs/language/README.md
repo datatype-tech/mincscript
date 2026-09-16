@@ -34,7 +34,7 @@ flowchart LR
 
 Minecraft “code” is already there: dummy scores, tags, `/execute`, command blocks, functions. People who know Java should not have to invent name-mangled objectives by hand. The language does that, then **places** the result.
 
-Three compilation products (one binary can hold all of them):
+Three compilation products (one binary can hold all of them; `.mar` wraps that binary plus targeting info):
 
 1. **Logic** — classes/methods → `.mcfunction` (and Bedrock `tick.json` / Java datapack `tick`) when `@Host(FUNCTION)`
 2. **Machine** — `.chain.mcs` files → command blocks with facing, type, delay, coordinates
@@ -50,13 +50,14 @@ If you only emit functions and never attach a host, nothing runs. That is alread
 | `p.keys += 1` inside the class | allowed | `scoreboard players add` |
 | `p.keys += 1` in another class | **compile error** | (no command emitted) |
 | `boolean extracted` | `private boolean extracted` | `/tag` (not a score) |
+| `Tag key = Tag.of("x")` | tag object | `tag <sel> add metro_key` (assignable to players/items) |
 | `if (p.keys >= 1)` | `if` | `execute if score … matches 1..` |
 | `for (Player p : players)` | `foreach` | `execute as` |
 | `enum Phase { LOBBY, PLAY }` | `enum` | fake-player score on a world object |
 | `package` | `pack metro.escape;` | namespace prefix |
 | annotations | `@Repeat @AlwaysActive` | CB block type + Always Active |
 | `Main` / Spring-style config | `controller.mcs` | where chains sit in the world |
-| `.jar` | `.mincb` | edition-neutral placement blob |
+| `.jar` | `.mar` (ZIP of MINCB + MANIFEST) | edition, game version, compiled machine |
 
 There is **no heap**. You never `new` a player at runtime. `Player` values are selector handles. `new` exists only for compile-time descriptors (item stacks, regions, chain layouts).
 

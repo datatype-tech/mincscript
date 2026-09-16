@@ -8,11 +8,14 @@ pub mod config;
 pub mod diagnostic;
 pub mod extract;
 pub mod isa;
+pub mod items;
 pub mod layout;
 pub mod lexer;
 pub mod lower;
+pub mod mar;
 pub mod mincb;
 pub mod nbt;
+pub mod opt;
 pub mod parser;
 pub mod place;
 pub mod project;
@@ -400,6 +403,8 @@ public class A {
             0
         );
         let mincb = dir.join("dist/test-minc-place.mincb");
+        let mar = dir.join("dist/test-minc-place.mar");
+        assert!(mar.is_file());
         assert_eq!(
             crate::cli::run(vec![
                 "minc".into(),
@@ -407,6 +412,14 @@ public class A {
                 mincb.display().to_string(),
                 "--chain".into(),
                 "Main".into(),
+            ]),
+            0
+        );
+        assert_eq!(
+            crate::cli::run(vec![
+                "minc".into(),
+                "inspect".into(),
+                mar.display().to_string(),
             ]),
             0
         );
@@ -479,6 +492,7 @@ public class A {
         ]);
         assert_eq!(code, 0);
         assert!(dir.join("dist/test-minc-new.mincb").is_file());
+        assert!(dir.join("dist/test-minc-new.mar").is_file());
     }
 
     #[test]
@@ -652,14 +666,14 @@ public class Kit {
         let Member::Method(m) = &class.members[0] else {
             panic!("method");
         };
-        assert!(m.body.iter().any(|s| matches!(
-            s.kind,
-            crate::ast::StmtKind::Local { is_temp: true, .. }
-        )));
-        assert!(m.body.iter().any(|s| matches!(
-            s.kind,
-            crate::ast::StmtKind::Run { .. }
-        )));
+        assert!(m
+            .body
+            .iter()
+            .any(|s| matches!(s.kind, crate::ast::StmtKind::Local { is_temp: true, .. })));
+        assert!(m
+            .body
+            .iter()
+            .any(|s| matches!(s.kind, crate::ast::StmtKind::Run { .. })));
         assert_eq!(
             m.body
                 .iter()
@@ -746,7 +760,10 @@ public chain C {
         assert!(be.contains("title @a title 地铁"), "{be}");
         assert!(be.contains("xp 5 @s"), "{be}");
         let je = dump_ed(src, crate::config::Edition::Java);
-        assert!(je.contains("effect give @a minecraft:speed 10 1 false"), "{je}");
+        assert!(
+            je.contains("effect give @a minecraft:speed 10 1 false"),
+            "{je}"
+        );
         assert!(je.contains("{\"text\":\"撤离\"}"), "{je}");
         assert!(!je.contains("rawtext"), "{je}");
         assert!(je.contains("{\"text\":\"地铁\"}"), "{je}");
@@ -833,5 +850,107 @@ public chain C {
         assert!(dump.contains("effect @a speed"), "{dump}");
         assert!(!dump.contains("objectives add flash"), "{dump}");
         assert!(!dump.contains("effect give"), "{dump}");
+        assert!(!art.mar.is_empty());
+        let opened = crate::mar::open(&art.mar).expect("mar");
+        assert_eq!(opened.mincb, art.mincb);
+        assert_eq!(opened.edition(), Some(config.edition.as_str()));
+    }
+
+    #[test]
+    fn unknown_item_is_rejected() {
+        let src = r#"
+pack demo;
+public chain C {
+    give(Players.all(), Items.NOT_A_REAL_ITEM.count(1));
+}
+"#;
+        let unit = parse(src).unwrap();
+        let errors = sema::check(&unit);
+        assert!(
+            errors.iter().any(|e| e.message.contains("NOT_A_REAL_ITEM")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn item_traits_and_tag_object_lower() {
+        let src = r#"
+pack demo;
+public chain C {
+    Tag key = Tag.of("metro_key");
+    give(Players.all(), Items.DIAMOND_SWORD.named("钥匙").lock().tag(key));
+    foreach (Player p : Players.all().withTag(key)) {
+        as (p) {
+            p.add(key);
+            if (p.has(key)) {
+                cmd("say tagged");
+            }
+        }
+    }
+}
+"#;
+        let be = dump_ed(src, crate::config::Edition::Bedrock);
+        assert!(be.contains("diamond_sword"), "{be}");
+        assert!(be.contains("item_lock"), "{be}");
+        assert!(
+            be.contains("tag @a[tag=metro_key] add metro_key")
+                || be.contains("tag @s add metro_key"),
+            "{be}"
+        );
+        assert!(be.contains("if entity") && be.contains("metro_key"), "{be}");
+        let je = dump_ed(src, crate::config::Edition::Java);
+        assert!(je.contains("minecraft:diamond_sword["), "{je}");
+        assert!(je.contains("custom_name="), "{je}");
+        assert!(je.contains("metro_key"), "{je}");
+    }
+
+    #[test]
+    fn java_for_while_plus_plus_and_ternary_are_not_one_to_one() {
+        let src = r#"
+pack demo;
+public class Match { public static int a; }
+public chain C {
+    for (int i = 0; i < 3; i++) {
+        cmd("say hi");
+    }
+    Match.a = true ? 2 : 9;
+    Match.a++;
+    if (false) {
+        cmd("say dead");
+    }
+}
+"#;
+        let dump = dump_ed(src, crate::config::Edition::Bedrock);
+        assert_eq!(dump.matches("say hi").count(), 3, "{dump}");
+        assert!(!dump.contains("say dead"), "{dump}");
+        assert!(!dump.contains(" 9"), "{dump}");
+        assert!(
+            dump.contains("scoreboard players set") || dump.contains("scoreboard players add"),
+            "{dump}"
+        );
+    }
+
+    #[test]
+    fn mar_is_zip_with_manifest_and_mincb() {
+        let src = r#"
+pack demo;
+public chain C { cmd("say mar"); }
+"#;
+        let unit = parse(src).unwrap();
+        let cfg = crate::config::MincConfig {
+            edition: crate::config::Edition::Bedrock,
+            pack: "demo".into(),
+            name: "kit".into(),
+            game_version: "1.21.70".into(),
+            ..crate::config::MincConfig::default()
+        };
+        let art = crate::compile::compile_unit(&unit, &cfg).expect("compile");
+        assert!(crate::mar::is_mar(&art.mar));
+        let (mincb, manifest) = crate::mar::unwrap_payload(&art.mar).expect("unwrap");
+        assert_eq!(mincb, art.mincb);
+        let man = manifest.expect("manifest");
+        assert!(man.contains("Edition: bedrock"));
+        assert!(man.contains("Game-Version: 1.21.70"));
+        assert!(man.contains("Minc-Format: 1"));
     }
 }
